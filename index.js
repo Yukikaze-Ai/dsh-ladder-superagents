@@ -393,11 +393,7 @@ async function probeCliTier(cfg, tier, cwd) {
     })
     const text = `${run.stdout}`.trim()
     if (run.code === 0 && text) return { ok: true, answer: text.slice(0, 60) }
-    const detail = [run.stderr, run.stdout]
-      .map((stream) => String(stream ?? '').trim())
-      .filter(Boolean)
-      .join(' ')
-      .slice(-200)
+    const detail = tailOf(run.stderr, run.stdout)
     return { ok: false, error: `exit ${run.code}${detail ? `: ${detail}` : ''}` }
   } catch (error) {
     return { ok: false, error: String(error?.message ?? error) }
@@ -497,14 +493,31 @@ function usageFileOf() {
   return join(stateDirOf(), 'usage.jsonl')
 }
 
-/** Append one usage line. Statistics must never break a spawn. */
+/**
+ * Append one usage line. Statistics must never break a spawn. The file is
+ * trimmed once it grows past a few thousand lines, so a year of use does not
+ * turn every stats read into a full parse of tens of megabytes.
+ */
+let usageChain = Promise.resolve()
+const USAGE_TRIM_BYTES = 1_500_000
+const USAGE_KEEP_LINES = 2000
+
 function recordUsage(entry) {
-  try {
-    const line = `${JSON.stringify({ at: Date.now(), ...entry })}\n`
-    return appendFile(usageFileOf(), line, 'utf8').catch(() => {})
-  } catch {
-    return Promise.resolve()
-  }
+  const line = `${JSON.stringify({ at: Date.now(), ...entry })}\n`
+  const file = usageFileOf()
+  usageChain = usageChain
+    .then(() => appendFile(file, line, 'utf8'))
+    .then(async () => {
+      try {
+        if (statSync(file).size < USAGE_TRIM_BYTES) return
+        const kept = readFileSync(file, 'utf8').split('\n').filter(Boolean).slice(-USAGE_KEEP_LINES)
+        await writeTextAtomic(file, `${kept.join('\n')}\n`)
+      } catch {
+        // a failed trim leaves the file as it was
+      }
+    })
+    .catch(() => {})
+  return usageChain
 }
 
 function readUsage(limit = 2000) {
@@ -532,6 +545,15 @@ export function withinHours(records, hours) {
   return records.filter((record) => Number(record.at) >= cutoff)
 }
 
+/** The last `limit` characters of stderr, then stdout, as one message. */
+function tailOf(stderr, stdout, limit = 200) {
+  return [stderr, stdout]
+    .map((stream) => String(stream ?? '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .slice(-limit)
+}
+
 /** Pull the last turn's token usage out of codex's JSONL event stream. */
 function tokensFromJsonl(stdout) {
   let usage = null
@@ -548,7 +570,7 @@ function tokensFromJsonl(stdout) {
 }
 
 /** Aggregate the usage log once, for both `supa_stats` and the Stats view. */
-function summarizeUsage(records) {
+export function summarizeUsage(records) {
   const byRoute = new Map()
   for (const record of records) {
     const key = String(record.route ?? 'inherit')
@@ -799,11 +821,7 @@ async function pinCodexTargets(cfg, cwd, targets, options = {}) {
         probes[key] = { ok: true, at: Date.now(), answer }
         verdicts.push({ model: model.slug, effort, ok: true, answer })
       } else {
-        const detail = [run.stderr, run.stdout]
-          .map((stream) => String(stream ?? '').trim())
-          .filter(Boolean)
-          .join(' ')
-          .slice(-200)
+        const detail = tailOf(run.stderr, run.stdout)
         const error = `exit ${run.code}${detail ? `: ${detail}` : ''}`
         probes[key] = { ok: false, at: Date.now(), error }
         verdicts.push({ model: model.slug, effort, ok: false, error })
@@ -1303,8 +1321,9 @@ export function apply(ctx, config) {
     if (!subagents || !agent) return 'unavailable'
 
     // A model that retries a denied command must not spawn a second child for
-    // the same work: the first one is still running.
-    const key = `${String(agent.session?.id ?? '')}\u0000${command}`
+    // the same work: the first one is still running. Whitespace differences are
+    // the same command.
+    const key = `${String(agent.session?.id ?? '')}\u0000${command.replace(/\s+/g, ' ').trim()}`
     const at = handedOff.get(key)
     if (at && Date.now() - at < HAND_OFF_DEDUPE_MS) return 'duplicate'
     handedOff.set(key, Date.now())
@@ -1382,7 +1401,13 @@ export function apply(ctx, config) {
     .split(/[;\n]|&&|\|\|/)
     .map((part) => part.trim())
     .filter(Boolean)
-  const looksLong = (command) => statementsOf(command).some((part) => LONG_COMMAND.test(part))
+  // A long command usually hides behind a wrapper: `cmd /c npm install`,
+  // `pwsh -c npm test`, `Start-Process npm`. Look through it.
+  const unwrapStatement = (part) => part
+    .replace(/^(?:cmd(?:\.exe)?\s+\/[ck]\s+|powershell(?:\.exe)?\s+-c(?:ommand)?\s+|pwsh(?:\.exe)?\s+-c(?:ommand)?\s+|Start-Process\s+)/i, '')
+    .replace(/^["']|["']$/g, '')
+  const looksLong = (command) => statementsOf(command)
+    .some((part) => LONG_COMMAND.test(part) || LONG_COMMAND.test(unwrapStatement(part)))
   ctx.effect(() => ctx.tools.guard((execution) => {
     if (!execution || !isSupa(execution.agent)) return undefined
     if (execution.name !== 'pwsh' && execution.name !== 'bash') return undefined
@@ -2100,6 +2125,12 @@ export function apply(ctx, config) {
     headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   })
 
+  // Read routes receive the authenticated peer, so they can require the owner.
+  // A local script has no peer and gets 403 instead of the ladder and the task
+  // labels of everything this session delegated.
+  const ownerOnly = (peer) => peer?.principal?.kind === 'owner'
+  const forbidden = () => jsonResponse({ error: 'this endpoint answers the app only' }, 403)
+
   const settingsState = async (requested) => {
     const cwd = apiCwd(requested)
     const file = modelsFileOf(cwd, cfg)
@@ -2313,7 +2344,8 @@ export function apply(ctx, config) {
         webServer.register({
           kind: 'exact',
           path: '/supa/stats',
-          resource: async (request) => {
+          resource: async (request, peer) => {
+            if (!ownerOnly(peer)) return forbidden()
             const hours = Number(new URL(request.url).searchParams.get('hours'))
             return jsonResponse(summarizeUsage(withinHours(readUsage(5000), hours)))
           },
@@ -2321,7 +2353,10 @@ export function apply(ctx, config) {
         webServer.register({
           kind: 'exact',
           path: '/supa/state',
-          resource: async (request) => jsonResponse(await settingsState(new URL(request.url).searchParams.get('cwd'))),
+          resource: async (request, peer) => {
+            if (!ownerOnly(peer)) return forbidden()
+            return jsonResponse(await settingsState(new URL(request.url).searchParams.get('cwd')))
+          },
         }),
         webServer.register({
           kind: 'exact',
@@ -2333,6 +2368,22 @@ export function apply(ctx, config) {
               res.statusCode = 405
               res.setHeader('allow', 'POST')
               res.end('POST only')
+              return
+            }
+            // A handler route gets no peer, so the best available guard is that
+            // the request comes from the app's own origin: a page on another
+            // site cannot rewrite this profile's config.
+            const origin = req.headers.origin
+            let self = ''
+            try {
+              self = webServer.getOrigin?.() ?? ''
+            } catch {
+              self = ''
+            }
+            if (origin && self && origin !== self) {
+              res.statusCode = 403
+              res.setHeader('content-type', 'application/json')
+              res.end(JSON.stringify({ error: 'cross-origin request refused' }))
               return
             }
             let raw = ''
@@ -2922,11 +2973,7 @@ export function apply(ctx, config) {
             }
             if (!text.trim()) text = stdout.trim() || stderr.trim()
             if (code === 0 && text.trim()) return finish(resolve, text.trim())
-            const detail = [stderr, stdout]
-              .map((stream) => String(stream ?? '').trim())
-              .filter(Boolean)
-              .join(' ')
-              .slice(-400)
+            const detail = tailOf(stderr, stdout, 400)
             finish(reject, new Error(`${driverName} exited ${code}${detail ? `: ${detail}` : ''}`))
           })
         })

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { ceilingOf, withinHours } from '../index.js'
+import { ceilingOf, summarizeUsage, withinHours } from '../index.js'
 
 const now = Date.now()
 const hoursAgo = (hours) => now - hours * 3600_000
@@ -50,4 +50,36 @@ test('withinHours with a non-numeric span returns every record', () => {
 test('ceilingOf clamps slots far outside the 1-10 range', () => {
   assert.equal(ceilingOf(-5), 10)
   assert.equal(ceilingOf(100), 1)
+})
+
+test('summarizeUsage counts one route and sums its tokens', () => {
+  const records = [
+    { at: 1, kind: 'start', route: 'r', slot: 2, task: 'a' },
+    { at: 2, kind: 'done', route: 'r', slot: 2, ms: 100, inputTokens: 10, outputTokens: 2 },
+    { at: 3, kind: 'failed', route: 'r', slot: 2, ms: 300 },
+  ]
+  const summary = summarizeUsage(records)
+  assert.equal(summary.records, 3)
+  const row = summary.summary[0]
+  assert.equal(row.started, 1)
+  assert.equal(row.done, 1)
+  assert.equal(row.failed, 1)
+  // Average of the two finished calls, not of every record.
+  assert.equal(row.avgMs, 200)
+  assert.equal(row.inputTokens, 10)
+  assert.equal(row.outputTokens, 2)
+  assert.equal(summary.slowestMs, 300)
+  // `recent` is newest first.
+  assert.deepEqual(summary.recent.map((record) => record.at), [3, 2, 1])
+})
+
+test('summarizeUsage keeps routes apart and tolerates an empty log', () => {
+  const summary = summarizeUsage([
+    { at: 1, kind: 'start', route: 'a', slot: 1 },
+    { at: 2, kind: 'start', route: 'b', slot: 5 },
+    { at: 3, kind: 'done', route: 'b', slot: 5, ms: 10 },
+  ])
+  assert.equal(summary.summary.length, 2)
+  assert.deepEqual(summary.summary.map((row) => row.slot), [1, 5])
+  assert.deepEqual(summarizeUsage([]), { records: 0, summary: [], slowestMs: 0, recent: [] })
 })

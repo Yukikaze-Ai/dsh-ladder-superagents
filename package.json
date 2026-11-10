@@ -27,7 +27,8 @@
     "win32"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "market:sync": "node scripts/sync-market.mjs"
   },
   "keywords": [
     "dsh",
