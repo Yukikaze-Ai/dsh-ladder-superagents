@@ -1145,8 +1145,36 @@ export function apply(ctx, config) {
     }))
   }
 
-  // A foreground sleep blocks the whole turn: nothing else happens until it
-  // returns. Sum them, so a polling loop of short sleeps is caught too.
+  // A foreground sleep blocks the whole turn, so the shell call is handed to a
+  // child that runs it and reports into the parent's queue. The parent is not
+  // asked to wait, and not asked to retry by hand either.
+  const handOffCommand = (agent, command) => {
+    const subagents = ctx.get?.('subagents')
+    if (!subagents || !agent) return false
+    const brief = [
+      '## Assignment',
+      'Your parent tried to run this in the foreground and it would block its turn, so it was handed to you.',
+      '',
+      'Run exactly this command once, in the workspace, and report the result:',
+      '',
+      '```',
+      command.slice(0, 4000),
+      '```',
+      '',
+      'Do not run anything else. Report the exit status and the tail of the output with `supa_report` (kind: result).',
+    ].join('\n')
+    const request = { prompt: textBlocks(brief), parent: agent }
+    const maxDepth = subagents.resolveMaxDepth?.()
+    if (typeof maxDepth === 'number') request.maxDepth = maxDepth
+    subagents.startActivation({
+      provider: cfg.spawnProvider || 'spawn',
+      label: 'handed-off command',
+      request,
+      delivery: 'parent',
+    }).catch(() => {})
+    return true
+  }
+
   const SLEEP_PATTERN = /\b(?:sleep\s+(\d+(?:\.\d+)?)|Start-Sleep\s+(?:-Seconds\s+)?(\d+(?:\.\d+)?)|timeout\s+\/t\s+(\d+))\b/gi
   const POLL_LOOP = /\b(?:while|until|for)\b[\s\S]{0,200}?\b(?:sleep|Start-Sleep)\b/i
   ctx.effect(() => ctx.tools.guard((execution) => {
@@ -1166,11 +1194,13 @@ export function apply(ctx, config) {
     if (total < 30 && !looping) return undefined
 
     const what = looping
-      ? 'This command polls in a loop with a sleep'
-      : `This command sleeps about ${Math.round(total)}s in the foreground`
-    return `${what}, which blocks the whole turn. `
-      + 'Check once. If the answer is not there yet, end the turn and say when to check again (or run it with `run_in_background: true`, '
-      + 'or hand it to a child with `supa_spawn`); the result lands in `supa_inbox`.'
+      ? 'polling in a loop'
+      : `sleeping about ${Math.round(total)}s`
+    if (handOffCommand(execution.agent, command)) {
+      return `Handed to a child instead of blocking this turn (${what}). It runs the command and reports the output into \`supa_inbox\`; do not wait for it, keep working.`
+    }
+    return `This command is ${what} in the foreground, which blocks the whole turn. `
+      + 'Run it with `run_in_background: true`, or hand it to a child with `supa_spawn`.'
   }))
 
   // ------------------------------------------------------------- sessions
