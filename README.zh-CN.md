@@ -110,11 +110,25 @@ git clone https://github.com/Yukikaze-Ai/dsh-ladder-superagents.git
 然后，在你希望它生效的那个 Harness 中，用 Plugin Manager 的
 “install from a directory”动作把克隆下来的目录作为 bundle 安装，并指向那个
 检出目录。Host 半边和 Client 半边会一起激活：工具出现在每个会话中，
-charter 加入下一次提示词组装，Settings 中新增一个 `dsh-supa` 页面。
+charter 加入下一次提示词组装，Settings 中新增一个「SupA 配置」页面。
 没有重新构建的步骤 —— Client 模块是通过 Harness 模块加载器加载的纯
 JavaScript。
 
 安装之后，工具会出现在每个会话中，并且 charter 会参与下一次提示词组装。
+
+## 在会话里启用
+
+默认是 `mode: session`，所以**不会自动启用**。一个会话在你明确表示之后才成为
+SupA，而且这个选择按会话记住：
+
+![会话头部的胶囊：绿点表示这个会话是 SupA](docs/img/pill.png)
+
+- **胶囊。** 会话头部有一个安静的 `SupA` 控件：绿点表示这个会话是 SupA，
+  灰色表示未启用。点一下即可切换。
+- **工具。** 在对话里，`supa_session enable` 做同一件事，`supa_session status`
+  报告当前状态。
+- **关闭是软停止。** 新的派活会被拒绝，但已经在跑的子代理会继续工作；它们的
+  报告留在队列里，下次启用时再浮出来。
 
 ## 拓扑：星形结构，每条边上一个队列
 
@@ -282,4 +296,5 @@ Bug 和复现是最有用的贡献。阅读
 路由测试都标记为 `good first issue`。
 
 发布说明位于 [CHANGELOG.md](CHANGELOG.md)。
+
 

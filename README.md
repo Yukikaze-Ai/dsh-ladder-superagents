@@ -112,11 +112,26 @@ Then, from the Harness you want it in, install the cloned directory as a bundle
 with the Plugin Manager's "install from a directory" action and point it at the
 checkout. The Host and Client halves activate together: the tools appear in
 every session, the charter joins the next prompt assembly, and Settings gains a
-`dsh-supa` page. No rebuild step — the Client module is plain JavaScript loaded
+`SupA settings` page. No rebuild step — the Client module is plain JavaScript loaded
 through the Harness module loader.
 
 After installation the tools appear in every session, and the charter is part
 of the next prompt assembly.
+
+## Turning it on in a session
+
+`mode: session` is the default, so **nothing is enabled automatically**. A session
+becomes a SupA when you say so, and the setting is remembered per session:
+
+![The session header pill: green means this session is a SupA](docs/img/pill.png)
+
+- **The pill.** The session header carries a quiet `SupA` control: a green dot
+  means this session is a SupA, grey means it is off. Click it to switch.
+- **The tool.** Inside the conversation, `supa_session enable` does the same and
+  `supa_session status` reports where the session stands.
+- **Switching off is a soft stop.** New spawns are refused, but children already
+  running keep working; their reports stay in the queue and surface the next time
+  you switch it on.
 
 ## Topology: star, with a queue on every edge
 
@@ -299,6 +314,7 @@ codebase learned the hard way, then pick something from
 marked `good first issue`.
 
 Release notes live in [CHANGELOG.md](CHANGELOG.md).
+
 
 
 
