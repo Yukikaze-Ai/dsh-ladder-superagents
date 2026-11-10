@@ -822,6 +822,72 @@ window.__ModuleLoader__.load({
       h('span', { style: { ...s.meta, flex: 1, color: color.text } }, String(record.task ?? '').slice(0, 60)),
       h('span', { style: s.meta }, record.ms ? `${record.ms}ms` : '')))
 
+      // A cheap visual: one proportion bar per tier, done vs failed.
+      const barRows = summary.map((row) => {
+        const total = Math.max(1, row.started)
+        const donePct = Math.round((row.done / total) * 100)
+        const failedPct = Math.round((row.failed / total) * 100)
+        return h('div', {
+          key: `bar-${row.route}`,
+          style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap' },
+        },
+        h('span', { style: { fontSize: 11, minWidth: 34, color: color.muted } }, `T${row.slot ?? '?'}`),
+        h('div', {
+          style: {
+            flex: 1,
+            height: 8,
+            borderRadius: 4,
+            overflow: 'hidden',
+            display: 'flex',
+            background: 'var(--dsw-alias-bg-layer-2, rgba(127,127,127,.12))',
+          },
+        },
+        h('div', { style: { width: `${donePct}%`, height: '100%', background: 'var(--dsw-alias-state-success-primary, #2f855a)' } }),
+        h('div', { style: { width: `${failedPct}%`, height: '100%', background: 'var(--dsw-alias-state-error-primary, #c53030)' } })),
+        h('span', { style: { fontSize: 11, minWidth: 84, color: color.muted, textAlign: 'right' } }, `${row.done}/${total}`))
+      })
+
+      // Lane timeline across the recent window: one bar per finished call,
+      // placed by start time and sized by duration.
+      const finished = recent.filter((record) => Number(record.ms) > 0)
+      const startOf = (record) => Number(record.at) - Number(record.ms || 0)
+      const windowStart = finished.length ? Math.min(...finished.map(startOf)) : 0
+      const windowEnd = finished.length ? Math.max(...finished.map((record) => Number(record.at))) : 0
+      const span = Math.max(1, windowEnd - windowStart)
+      const laneRows = finished.slice(0, 20).map((record, index) => {
+        const left = ((startOf(record) - windowStart) / span) * 100
+        const width = Math.max(1.5, (Number(record.ms) / span) * 100)
+        return h('div', {
+          key: `lane-${record.at}-${index}`,
+          style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap' },
+        },
+        h('span', { style: { fontSize: 11, minWidth: 34, color: color.muted } }, `T${record.slot ?? '?'}`),
+        h('div', {
+          style: {
+            flex: 1,
+            height: 10,
+            position: 'relative',
+            background: 'var(--dsw-alias-bg-layer-2, rgba(127,127,127,.08))',
+            borderRadius: 3,
+          },
+        },
+        h('div', {
+          title: `${record.route ?? ''} · ${record.ms}ms`,
+          style: {
+            position: 'absolute',
+            left: `${Math.min(98, Math.max(0, left))}%`,
+            width: `${Math.min(100, width)}%`,
+            top: 0,
+            height: '100%',
+            borderRadius: 3,
+            background: record.kind === 'failed'
+              ? 'var(--dsw-alias-state-error-primary, #c53030)'
+              : 'var(--dsw-alias-state-success-primary, #2f855a)',
+          },
+        })),
+        h('span', { style: { fontSize: 11, minWidth: 60, color: color.muted, textAlign: 'right' } }, `${record.ms}ms`))
+      })
+
       return h('div', { style: { ...s.page, gap: 10 } },
         h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
@@ -834,6 +900,18 @@ window.__ModuleLoader__.load({
           summary.length === 0
             ? h('div', { style: s.hint }, '还没有调用记录。派一次任务之后这里就会有。')
             : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, ...summaryRows)),
+
+        h('div', { style: s.card },
+          h('div', { style: s.sectionTitle }, '完成比例'),
+          summary.length === 0
+            ? h('div', { style: s.hint }, '—')
+            : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, ...barRows)),
+
+        h('div', { style: s.card },
+          h('div', { style: s.sectionTitle }, '调用时间线'),
+          laneRows.length === 0
+            ? h('div', { style: s.hint }, '还没有已完成的调用。')
+            : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, ...laneRows)),
 
         h('div', { style: s.card },
           h('div', { style: s.sectionTitle }, '最近调用'),
