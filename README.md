@@ -99,7 +99,7 @@ declares `dsh.bundle.patch`. Installing it into a profile inserts its plugin
 row (Host half) and its Client half.
 
 ```bash
-git clone https://github.com/Yukikaze-Ai/dsh-supa.git
+git clone https://github.com/Yukikaze-Ai/dsh-ladder-superagents.git
 ```
 
 Then, from the Harness you want it in, install the cloned directory as a bundle
