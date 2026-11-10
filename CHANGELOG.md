@@ -9,6 +9,8 @@ and adds usage statistics and a test suite.
 
 ### Added
 
+- **A Chinese README** (`README.zh-CN.md`), a full translation with the same
+  structure, and a language link at the top of both files.
 - **Usage statistics.** `supa_stats` records every ladder call per tier and
   reports counts, durations and the recent tasks; a Stats view beside the
   conversation tabs plots a call timeline and duration bars over a selectable

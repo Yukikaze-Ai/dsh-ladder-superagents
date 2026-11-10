@@ -1,5 +1,7 @@
 # dsh-ladder-superagents
 
+**English** · [中文](README.zh-CN.md)
+
 > **0.1 is Windows-only.** CLI discovery, `.cmd` launching and path handling are
 > written for Windows. On macOS and Linux the llm tiers work, the CLI tiers do
 > not. `os: ["win32"]` in `package.json` says so.

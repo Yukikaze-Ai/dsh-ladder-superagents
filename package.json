@@ -22,7 +22,8 @@
     "CHANGELOG.md",
     "docs/*.md",
     "LICENSE",
-    "docs/img/*.png"
+    "docs/img/*.png",
+    "README.zh-CN.md"
   ],
   "os": [
     "win32"
