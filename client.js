@@ -835,6 +835,15 @@ window.__ModuleLoader__.load({
       const totalDone = summary.reduce((sum, row) => sum + row.done, 0)
       const totalFailed = summary.reduce((sum, row) => sum + row.failed, 0)
 
+      const windowLabel = (() => {
+        const value = Number(hours)
+        if (!Number.isFinite(value) || value <= 0) return '全部时间'
+        if (value === 24) return '最近 1 天'
+        if (value === 168) return '最近 7 天'
+        if (value === 720) return '最近 30 天'
+        return `最近 ${value} 小时`
+      })()
+
       const summaryRows = summary.map((row) => h('div', {
         key: row.route,
         style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
@@ -927,7 +936,7 @@ window.__ModuleLoader__.load({
         h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
             h('div', { style: s.title }, '模型使用统计'),
-            h('div', { style: s.sub }, `${stats.records} 条记录 · 完成 ${totalDone} · 失败 ${totalFailed}`)),
+            h('div', { style: s.sub }, `${windowLabel} · ${stats.records} 条记录 · 完成 ${totalDone} · 失败 ${totalFailed}`)),
           h('div', { style: s.actions },
             h('select', {
               style: s.input,
