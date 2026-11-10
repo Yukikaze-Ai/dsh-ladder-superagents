@@ -956,8 +956,17 @@ window.__ModuleLoader__.load({
         h('span', { style: { fontSize: 11, minWidth: 60, color: color.muted, textAlign: 'right' } }, `${record.ms}ms`))
       })
 
-      return h('div', { style: { ...s.page, gap: 10 } },
-        h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
+      return h('div', { style: { ...s.page, gap: 10, padding: '16px 28px 20px' } },
+        h('div', {
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+            paddingRight: 12,
+          },
+        },
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
             h('div', { style: s.title }, '模型使用统计'),
             h('div', { style: s.sub }, `${windowLabel} · ${stats.records} 条记录 · 完成 ${totalDone} · 失败 ${totalFailed}`)),
