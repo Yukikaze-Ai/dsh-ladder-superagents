@@ -376,7 +376,12 @@ async function probeCliTier(cfg, tier, cwd) {
     })
     const text = `${run.stdout}`.trim()
     if (run.code === 0 && text) return { ok: true, answer: text.slice(0, 60) }
-    return { ok: false, error: `exit ${run.code}${run.stderr.trim() ? `: ${run.stderr.trim().slice(-160)}` : ''}` }
+    const detail = [run.stderr, run.stdout]
+      .map((stream) => String(stream ?? '').trim())
+      .filter(Boolean)
+      .join(' ')
+      .slice(-200)
+    return { ok: false, error: `exit ${run.code}${detail ? `: ${detail}` : ''}` }
   } catch (error) {
     return { ok: false, error: String(error?.message ?? error) }
   } finally {
@@ -656,7 +661,12 @@ async function pinCodexTargets(cfg, cwd, targets, options = {}) {
         probes[key] = { ok: true, at: Date.now(), answer }
         verdicts.push({ model: model.slug, effort, ok: true, answer })
       } else {
-        const error = `exit ${run.code}${run.stderr.trim() ? `: ${run.stderr.trim().slice(-160)}` : ''}`
+        const detail = [run.stderr, run.stdout]
+          .map((stream) => String(stream ?? '').trim())
+          .filter(Boolean)
+          .join(' ')
+          .slice(-200)
+        const error = `exit ${run.code}${detail ? `: ${detail}` : ''}`
         probes[key] = { ok: false, at: Date.now(), error }
         verdicts.push({ model: model.slug, effort, ok: false, error })
       }
@@ -738,7 +748,11 @@ const CLI_DRIVERS = {
     args: ({ model, authority }) => [
       '-p', '--output-format', 'text',
       ...(model ? ['--model', model] : []),
-      ...(authority === 'full' ? ['--dangerously-skip-permissions'] : []),
+      // A SupA never waits for a human: either skip the checks (full) or make
+      // sure a permission prompt resolves to "no" instead of hanging stdout.
+      ...(authority === 'full'
+        ? ['--dangerously-skip-permissions']
+        : ['--permission-prompts', 'none']),
     ],
   },
   gemini: {
@@ -2491,7 +2505,12 @@ export function apply(ctx, config) {
             }
             if (!text.trim()) text = stdout.trim() || stderr.trim()
             if (code === 0 && text.trim()) return finish(resolve, text.trim())
-            finish(reject, new Error(`${driverName} exited ${code}${stderr.trim() ? `: ${stderr.trim().slice(-400)}` : ''}`))
+            const detail = [stderr, stdout]
+              .map((stream) => String(stream ?? '').trim())
+              .filter(Boolean)
+              .join(' ')
+              .slice(-400)
+            finish(reject, new Error(`${driverName} exited ${code}${detail ? `: ${detail}` : ''}`))
           })
         })
 
