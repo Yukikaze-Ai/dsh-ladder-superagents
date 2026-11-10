@@ -57,6 +57,8 @@ const DEFAULTS = {
   /** When a routed child stops on error/max-tokens/refusal, retry one tier weaker. */
   retryOnFailure: true,
   maxRouteRetries: 2,
+  /** How long a tier stays out of rotation after a failed attempt. */
+  failureCooldownMs: 30 * 60 * 1000,
   /** External CLI tiers: executable override, run limit, result cap. */
   codexCommand: '',
   codexEphemeral: true,
@@ -227,6 +229,33 @@ function lanesOf(records) {
 
 function modelsFileOf(cwd, cfg) {
   return join(ledgerDirOf(cwd, cfg), 'models.json')
+}
+
+function failuresFileOf(cwd, cfg) {
+  return join(ledgerDirOf(cwd, cfg), 'failures.json')
+}
+
+/** Tier failures are runtime state, kept out of the user-owned ladder file. */
+function readFailures(cwd, cfg) {
+  try {
+    const parsed = JSON.parse(readFileSync(failuresFileOf(cwd, cfg), 'utf8'))
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function failureActive(entry, cfg) {
+  return Boolean(entry && Number(entry.at) && Date.now() - Number(entry.at) < cfg.failureCooldownMs)
+}
+
+async function recordFailure(cwd, cfg, key, error) {
+  if (!key) return
+  const file = failuresFileOf(cwd, cfg)
+  const all = readFailures(cwd, cfg)
+  all[key] = { at: Date.now(), error: String(error ?? '').slice(0, 300) }
+  await mkdir(ledgerDirOf(cwd, cfg), { recursive: true })
+  await writeFile(file, `${JSON.stringify(all, null, 2)}\n`, 'utf8')
 }
 
 /**
@@ -1022,14 +1051,23 @@ export function apply(ctx, config) {
     return ok
   }
 
-  const resolveRoute = async (ladder, difficulty) => {
+  const resolveRoute = async (ladder, difficulty, cwd) => {
     const tiers = ladder.tiers
     const availability = await Promise.all(tiers.map((tier) => tierAvailable(tier)))
-    const usable = tiers.filter((tier, index) => availability[index] && tier.enabled)
-    if (usable.length === 0) return { tier: null, degraded: false, usable: 0, total: tiers.length, chain: [] }
-    const adequate = usable.filter((tier) => tier.ceiling >= difficulty)
-    if (adequate.length > 0) return { tier: adequate[adequate.length - 1], degraded: false, usable: usable.length, total: tiers.length, chain: usable }
-    return { tier: usable[0], degraded: true, usable: usable.length, total: tiers.length, chain: usable }
+    const failures = cwd ? readFailures(cwd, cfg) : {}
+    const healthy = tiers.filter((tier, index) => availability[index] && tier.enabled && !failureActive(failures[tier.id], cfg))
+    if (healthy.length === 0) {
+      // Everything is cooling down: use the strongest enabled tier rather than
+      // falling back to the parent route, and say so.
+      const fallback = tiers.filter((tier, index) => availability[index] && tier.enabled)
+      if (fallback.length > 0) {
+        return { tier: fallback[0], degraded: false, usable: fallback.length, total: tiers.length, chain: fallback, cooled: true }
+      }
+      return { tier: null, degraded: false, usable: 0, total: tiers.length, chain: [] }
+    }
+    const adequate = healthy.filter((tier) => tier.ceiling >= difficulty)
+    if (adequate.length > 0) return { tier: adequate[adequate.length - 1], degraded: false, usable: healthy.length, total: tiers.length, chain: healthy }
+    return { tier: healthy[0], degraded: true, usable: healthy.length, total: tiers.length, chain: healthy }
   }
 
   const routeOptions = (tier) => ({
@@ -1049,7 +1087,7 @@ export function apply(ctx, config) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['list', 'scan', 'pin', 'add', 'remove', 'move', 'route'] },
+        action: { type: 'string', enum: ['list', 'scan', 'pin', 'add', 'remove', 'move', 'route', 'clear'] },
         model: {
           type: 'string',
           description: 'For `pin`: test every effort this model supports. Omit to pin the ladder\'s codex tiers instead.',
@@ -1098,7 +1136,11 @@ export function apply(ctx, config) {
       if (args.action === 'list') {
         const ladder = await readLadder(file)
         const availability = await Promise.all(ladder.tiers.map((tier) => tierAvailable(tier)))
-        const lines = ladder.tiers.map((tier, index) => `${renderTier(tier, index)}${availability[index] ? '' : ' · UNAVAILABLE'}`)
+        const failures = readFailures(cwd, cfg)
+        const lines = ladder.tiers.map((tier, index) => {
+          const failed = failureActive(failures[tier.id], cfg) ? failures[tier.id] : null
+          return `${renderTier(tier, index)}${availability[index] ? '' : ' · UNAVAILABLE'}${failed ? ` · COOLING DOWN: ${leadingLine(failed.error, 80)}` : ''}`
+        })
         if (ladder.tiers.some((tier) => tier.kind === 'codex')) lines.push(`codex binary: ${findCodex(cfg)}`)
         try {
           const cached = JSON.parse(readFileSync(join(ledgerDirOf(cwd, cfg), 'codex-models.json'), 'utf8'))
@@ -1128,6 +1170,16 @@ export function apply(ctx, config) {
           rows.length ? `\nRoutes the llm service advertises:\n${rows.join('\n')}` : '',
           '\nDifficulty: 1 = trivial, 10 = contradictory or missing information needing judgment.',
         ].filter(Boolean).join('\n')
+      }
+
+      if (args.action === 'clear') {
+        const all = readFailures(cwd, cfg)
+        const next = args.id
+          ? Object.fromEntries(Object.entries(all).filter(([key]) => key !== args.id))
+          : {}
+        await mkdir(ledgerDirOf(cwd, cfg), { recursive: true })
+        await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(next, null, 2)}\n`, 'utf8')
+        return args.id ? `cleared the failure mark on ${args.id}` : 'cleared every tier failure mark'
       }
 
       if (args.action === 'scan') {
@@ -1188,7 +1240,7 @@ export function apply(ctx, config) {
       }
 
       const difficulty = Math.min(10, Math.max(1, Number(args.difficulty) || 5))
-      const picked = await resolveRoute(ladder, difficulty)
+      const picked = await resolveRoute(ladder, difficulty, cwd)
       if (!picked.tier) {
         return `difficulty ${difficulty}: no usable tier (${picked.total} configured). A spawn would inherit your own route.`
       }
@@ -1278,6 +1330,7 @@ export function apply(ctx, config) {
     } catch {
       // no catalog cached yet
     }
+    const failures = readFailures(cwd, cfg)
     return {
       cwd,
       file,
@@ -1289,11 +1342,13 @@ export function apply(ctx, config) {
         autoApprove: cfg.autoApprove,
         authority: cfg.authority,
         retryOnFailure: cfg.retryOnFailure,
+        failureCooldownMs: cfg.failureCooldownMs,
       },
       tiers: ladder.tiers.map((tier, index) => ({
         ...tier,
         route: tierRoute(tier),
         available: Boolean(availability[index]),
+        failure: failureActive(failures[tier.id], cfg) ? failures[tier.id] : null,
       })),
     }
   }
@@ -1313,6 +1368,16 @@ export function apply(ctx, config) {
       const result = await pinNow(cwd, body.model, body.force === true)
       const next = await settingsState(cwd)
       return { ...next, pin: result.verdicts }
+    }
+
+    if (body?.action === 'clear') {
+      const all = readFailures(cwd, cfg)
+      const next = body.id
+        ? Object.fromEntries(Object.entries(all).filter(([key]) => key !== String(body.id)))
+        : {}
+      await mkdir(ledgerDirOf(cwd, cfg), { recursive: true })
+      await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(next, null, 2)}\n`, 'utf8')
+      return settingsState(cwd)
     }
 
     if (body?.action === 'move') {
@@ -1711,7 +1776,7 @@ export function apply(ctx, config) {
           if (!tier) throw new Error(`no ladder tier with id ${args.route}; run supa_models list`)
           routeChain = [tier]
         } else {
-          const picked = await resolveRoute(ladder, Math.min(10, Math.max(1, Number(args.difficulty) || 5)))
+          const picked = await resolveRoute(ladder, Math.min(10, Math.max(1, Number(args.difficulty) || 5)), cwd)
           tier = picked.tier
           routeChain = picked.chain
         }
@@ -1829,6 +1894,9 @@ export function apply(ctx, config) {
       }
 
       const onFailure = (tier, attempt, stop) => {
+        // Mark the tier whatever happens next: the failure is a fact about the
+        // model, not about this particular retry decision.
+        if (tier?.id) recordFailure(cwd, cfg, tier.id, stop).catch(() => {})
         if (!cfg.retryOnFailure) return
         const index = tier ? routeChain.findIndex((entry) => entry.id === tier.id) : -1
         const next = index >= 0 ? routeChain[index + 1] : undefined

@@ -73,14 +73,19 @@ window.__ModuleLoader__.load({
           h('div', { style: { fontSize: 11, color: muted } },
             `${tier.route} · ceiling ${tier.ceiling} · ${tier.id}`)),
         h(Cell, null,
-          h('span', { style: styles.dot(tier.available && tier.enabled) }),
-          h('span', { style: { marginLeft: 6, fontSize: 12, color: muted } },
-            tier.enabled ? (tier.available ? 'usable' : 'missing binary') : 'disabled')),
+          h('span', { style: styles.dot(tier.available && tier.enabled && !tier.failure) }),
+          h('span', { style: { marginLeft: 6, fontSize: 12, color: tier.failure ? 'var(--dsw-alias-state-error, #c04040)' : muted } },
+            tier.failure
+              ? `failed: ${String(tier.failure.error || '').slice(0, 70)}`
+              : tier.enabled ? (tier.available ? 'usable' : 'missing binary') : 'disabled')),
         h(Cell, null,
           h('div', { style: styles.row },
             h('button', { style: styles.button, onClick: () => move(index - 1), disabled: index === 0, title: 'Move up' }, '↑'),
             h('button', { style: styles.button, onClick: () => move(index + 1), disabled: index === count - 1, title: 'Move down' }, '↓'),
             h('button', { style: styles.button, onClick: toggle }, tier.enabled ? 'Disable' : 'Enable'),
+            tier.failure
+              ? h('button', { style: styles.button, onClick: () => onAction({ action: 'clear', id: tier.id }) }, 'Clear')
+              : null,
             h('button', { style: styles.button, onClick: () => onAction({ action: 'remove', id: tier.id }) }, 'Remove'))))
     }
 

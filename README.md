@@ -154,11 +154,13 @@ The SupA scores a task 1-10; `supa_spawn` with `difficulty: 7` picks the tier.
 - Availability is the live `llm` service (`resolveCallConfig`, cached 60s), so
   an unavailable tier is skipped and the next one down is used — the
   "degrade one step at a time" rule.
-- When the score exceeds every tier, the router starts at the strongest
-  available tier — a 10-point task with a 7-point MAX begins there — and walks
-  one tier weaker on a failed attempt (`error` / `max-tokens` / `refusal`, not
-  `aborted`), at most `maxRouteRetries` times. Each failed attempt and retry is
-  queued for the parent as a `retry` record, so the SupA sees the descent.
+- A failed attempt marks its tier in `.dsh-supa/failures.json` for
+  `failureCooldownMs` (30 min by default). The router skips a cooling tier, so
+  the next task routes one step down instead of retrying a model that is known
+  to be down. The mark shows as `COOLING DOWN: <error>` in `supa_models list`
+  and on the settings page, where **Clear** removes it early. If every tier is
+  cooling, the strongest enabled tier is used rather than silently falling back
+  to the parent route.
 - An empty ladder means children inherit the parent route, unchanged.
 - A tier may be an external CLI instead of a Harness route: `kind: "codex"`
   runs `codex exec` as a child process, feeds the same context pack on stdin,
