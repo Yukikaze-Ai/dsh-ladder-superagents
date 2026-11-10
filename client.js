@@ -461,9 +461,13 @@ window.__ModuleLoader__.load({
 
     function Policy({ config, busy, onConfig }) {
       const [minutes, setMinutes] = useState('')
+      const [children, setChildren] = useState('')
       useEffect(() => {
         setMinutes(String(Math.round((config?.failureCooldownMs ?? 0) / 60000)))
       }, [config?.failureCooldownMs])
+      useEffect(() => {
+        setChildren(String(config?.maxChildren ?? ''))
+      }, [config?.maxChildren])
 
       return h('div', { style: s.card },
         h('div', { style: s.sectionTitle }, 'Policy'),
@@ -516,6 +520,31 @@ window.__ModuleLoader__.load({
             onClick: () => onConfig({ failureCooldownMinutes: Number(minutes) || 0 }),
           }, 'Apply'),
           h('span', { style: { ...s.meta, flex: 1 } }, 'how long a failed tier stays out of rotation')),
+        h('div', { style: s.row },
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Fan-out'),
+          h('input', {
+            style: { ...s.input, width: 70 },
+            value: children,
+            onChange: (event) => setChildren(event.target.value),
+          }),
+          h('button', {
+            style: s.btn,
+            disabled: busy,
+            onClick: () => onConfig({ maxChildren: Number(children) || 1 }),
+          }, 'Apply'),
+          h('span', { style: { ...s.meta, flex: 1 } }, 'how many children may run at once')),
+        h('div', { style: s.row },
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Shell hand-off'),
+          h('select', {
+            style: s.input,
+            value: config.handOffShell,
+            disabled: busy,
+            onChange: (event) => onConfig({ handOffShell: event.target.value }),
+          },
+          h('option', { value: 'blocking' }, 'sleeps and loops'),
+          h('option', { value: 'long' }, 'sleeps, builds, tests'),
+          h('option', { value: 'all' }, 'every shell command')),
+          h('span', { style: { ...s.meta, flex: 1 } }, 'which shell calls go to a worker instead of this turn')),
         h('div', { style: s.row },
           h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Questions'),
           h('button', {

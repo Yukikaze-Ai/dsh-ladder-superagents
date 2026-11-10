@@ -1303,6 +1303,10 @@ export function apply(ctx, config) {
       // startActivation calls throwIfAborted on this, so it must be a signal.
       signal: signal ?? new AbortController().signal,
       delivery: 'parent',
+    }).then((activation) => {
+      // The worker inherits this session's authority, exactly like a spawned
+      // child: a handed-off command must not lose the level it ran with.
+      if (activation?.childId) grants.set(String(activation.childId), grantFor(agent))
     }).catch((error) => {
       // The command never started. Say so in the queue instead of leaving the
       // model believing a child is working on it.
@@ -2083,6 +2087,8 @@ export function apply(ctx, config) {
         retryOnFailure: cfg.retryOnFailure,
         denyBlockingQuestions: cfg.denyBlockingQuestions,
         failureCooldownMs: cfg.failureCooldownMs,
+        maxChildren: cfg.maxChildren,
+        handOffShell: cfg.handOffShell,
       },
       tiers: ladder.tiers.map((tier, index) => ({
         ...tier,
@@ -2120,6 +2126,9 @@ export function apply(ctx, config) {
       if (['all', 'root', 'preset', 'session'].includes(body.mode)) changes.mode = body.mode
       if (body.authority === 'workspace' || body.authority === 'full') changes.authority = body.authority
       if (typeof body.denyBlockingQuestions === 'boolean') changes.denyBlockingQuestions = body.denyBlockingQuestions
+      if (['blocking', 'long', 'all'].includes(body.handOffShell)) changes.handOffShell = body.handOffShell
+      const children = Number(body.maxChildren)
+      if (Number.isFinite(children) && children >= 1 && children <= 32) changes.maxChildren = Math.round(children)
       const minutes = Number(body.failureCooldownMinutes)
       if (Number.isFinite(minutes) && minutes >= 0) {
         changes.failureCooldownMs = Math.max(0, Math.round(minutes * 60000))
