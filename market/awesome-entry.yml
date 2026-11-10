@@ -1,7 +1,9 @@
 # Entry for the community catalog: https://github.com/awesome-dsh-plugin/awesome-dsh-plugin
 #
 # Submit it as ONE new file named:
-#   data/plugins/yukikaze-ai__dsh-ladder-superagents.yml
+#   data/plugins/Yukikaze-Ai__dsh-ladder-superagents.yml
+# The case must match the repository URL exactly — CI compares the filename with
+# `url` character for character and refuses an all-lowercase variant.
 # in a pull request to that repository. Do not edit its READMEs by hand: they are
 # generated from data/plugins/*.yml.
 #
