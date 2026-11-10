@@ -332,6 +332,22 @@ function findCodex(cfg) {
   return 'codex'
 }
 
+/**
+ * Fresh installs start from one model at its four thinking levels: the same
+ * model ranked by effort is the honest default, and it needs no configuration
+ * to be useful. Anything else the user drags in replaces it.
+ */
+const DEFAULT_TIERS = [
+  { label: 'DeepSeek Flash 4.1 (max)', provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max', slot: 1 },
+  { label: 'DeepSeek Flash 4.1 (high)', provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'high', slot: 2 },
+  { label: 'DeepSeek Flash 4.1 (low)', provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'low', slot: 3 },
+  { label: 'DeepSeek Flash 4.1 (off)', provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'off', slot: 4 },
+]
+
+function defaultLadder() {
+  return { version: 1, tiers: DEFAULT_TIERS.map((tier, index) => normalizeTier(tier, index)) }
+}
+
 function normalizeTier(raw, index) {
   const tier = raw && typeof raw === 'object' ? raw : {}
   const provider = typeof tier.provider === 'string' ? tier.provider : ''
@@ -377,7 +393,15 @@ async function readLadder(file) {
     }).sort((a, b) => a.slot - b.slot)
     return { version: 1, tiers }
   } catch {
-    return { version: 1, tiers: [] }
+    // No ladder yet: seed the built-in default so a fresh profile has a
+    // working pool instead of "everything inherits the parent route".
+    const seeded = defaultLadder()
+    try {
+      await writeLadder(file, seeded)
+    } catch {
+      // a read-only state directory still gets the in-memory default
+    }
+    return seeded
   }
 }
 
@@ -1542,6 +1566,11 @@ export function apply(ctx, config) {
         editor.edit(entry, (current) => ({ ...current, ...changes })).catch(() => {})
       }, 150)
       return { ...(await settingsState(cwd)), pending: changes }
+    }
+
+    if (body?.action === 'reset') {
+      await writeLadder(file, defaultLadder())
+      return settingsState(cwd)
     }
 
     if (body?.action === 'scan') {

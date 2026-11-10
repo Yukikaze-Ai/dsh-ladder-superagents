@@ -355,6 +355,12 @@ window.__ModuleLoader__.load({
       const [error, setError] = useState('')
       const [busy, setBusy] = useState(false)
       const [dragIndex, setDragIndex] = useState(null)
+      const [resetting, setResetting] = useState(false)
+      useEffect(() => {
+        if (!resetting) return undefined
+        const timer = setTimeout(() => setResetting(false), 3000)
+        return () => clearTimeout(timer)
+      }, [resetting])
 
       const load = useCallback(async (targetCwd) => {
         try {
@@ -424,7 +430,21 @@ window.__ModuleLoader__.load({
             h('div', { style: s.title }, 'Model ladder'),
             h('div', { style: s.sub }, summary),
             h('div', { style: s.sub }, state.file)),
-          h('button', { style: s.btn, onClick: () => load(cwd), disabled: busy }, 'Refresh')),
+          h('div', { style: s.actions },
+            h('button', {
+              style: resetting ? { ...s.btn, color: color.bad } : s.btn,
+              disabled: busy,
+              onClick: () => {
+                if (resetting) {
+                  setResetting(false)
+                  act({ action: 'reset' })
+                } else {
+                  setResetting(true)
+                }
+              },
+              title: 'Replace the ladder with the built-in default (four thinking levels of one model)',
+            }, resetting ? 'Sure?' : 'Reset'),
+            h('button', { style: s.btn, onClick: () => load(cwd), disabled: busy }, 'Refresh'))),
 
         h('div', { style: s.section },
           ...Array.from({ length: 10 }, (_, offset) => {
