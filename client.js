@@ -335,8 +335,17 @@ window.__ModuleLoader__.load({
               style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'nowrap' },
             },
             h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, `${route.provider}/${route.model}`),
-            h('span', { style: s.chip }, route.defaultEffort ? `${t('default effort')} ${route.defaultEffort}` : t('no default effort')),
-            h('span', { style: { ...s.meta, flex: 1 } }, route.efforts.length ? `${t('efforts')} ${route.efforts.join(' / ')}` : t('no reasoning metadata')),
+            h('span', { style: { ...s.chip, whiteSpace: 'nowrap' } }, route.defaultEffort ? `${t('default effort')} ${route.defaultEffort}` : t('no default effort')),
+            h('span', {
+              style: {
+                ...s.meta,
+                flex: 1,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              },
+              title: route.efforts.length ? `${t('efforts')} ${route.efforts.join(' / ')}` : t('no reasoning metadata'),
+            }, route.efforts.length ? `${t('efforts')} ${route.efforts.join(' / ')}` : t('no reasoning metadata')),
             h('button', {
               style: s.btn,
               disabled: busyNow,
