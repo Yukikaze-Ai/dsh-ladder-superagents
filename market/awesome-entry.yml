@@ -1,0 +1,21 @@
+# Entry for the community catalog: https://github.com/awesome-dsh-plugin/awesome-dsh-plugin
+#
+# Submit it as ONE new file named:
+#   data/plugins/yukikaze-ai__dsh-ladder-superagents.yml
+# in a pull request to that repository. Do not edit its READMEs by hand: they are
+# generated from data/plugins/*.yml.
+#
+# Blocked until the repository is at least one day old (CI checks that), and the
+# repository must carry the `dsh-plugin` topic.
+#
+# Requirements already met by this repo:
+#   - package.json declares dsh.bundle.patch (installable via `dsh plugin add`)
+#   - cordis.patch.yml sits at the repository root
+#   - the code is real and the description below matches it
+
+url: https://github.com/Yukikaze-Ai/dsh-ladder-superagents
+name: Yukikaze-Ai/dsh-ladder-superagents
+category: agi
+description:
+  en: 'Ranks models in a ten-slot ladder, routes each subagent by a 1-10 difficulty, and falls back a tier when one fails.'
+  zh: '把模型排成十档阶梯，按 1–10 的难度给子代理选档，失败自动降一档。'
