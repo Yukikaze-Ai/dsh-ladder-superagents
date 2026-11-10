@@ -175,10 +175,12 @@ window.__ModuleLoader__.load({
         }, confirming ? 'Sure?' : '✕')))
     }
 
-    function Catalog({ catalog, llm, busy, onScan, onPin, onAdd, canPinTiers }) {
+    function Catalog({ catalog, llm, failures, busy, onScan, onPin, onAdd, canPinTiers }) {
       const [pending, setPending] = useState('')
       const [adding, setAdding] = useState('')
       const [verifiedOnly, setVerifiedOnly] = useState(false)
+      const failedRoutes = new Set((failures ?? []).map((failure) => failure.route))
+      const failedFor = (slug, effort) => failedRoutes.has(`codex ${slug}@${effort}`)
       const run = async (kind, body) => {
         setPending(kind)
         try {
@@ -244,12 +246,14 @@ window.__ModuleLoader__.load({
                 return verdicts.length > 0 && verdicts.every((verdict) => verdict.ok)
               }).map((model) => {
                 const verdicts = model.efforts.map((effort) => verdictOf(model.slug, effort)).filter(Boolean)
-                const status = verdicts.length === 0
-                  ? { color: color.warn, label: 'scanned, not pinned' }
-                  : verdicts.every((verdict) => verdict.ok)
+                const anyOk = verdicts.some((verdict) => verdict.ok)
+                const anyFail = verdicts.some((verdict) => !verdict.ok)
+                  || model.efforts.some((effort) => failedFor(model.slug, effort))
+                const status = anyFail
+                  ? { color: color.bad, label: 'a configuration failed' }
+                  : anyOk
                     ? { color: color.ok, label: 'pinned usable' }
-                    : { color: color.bad, label: 'pin failed' }
-                const pinnable = status.color === color.ok
+                    : { color: color.warn, label: 'scanned, not pinned' }
                 return h('div', { key: model.slug, style: { display: 'flex', flexDirection: 'column', gap: 6 } },
                   h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' } },
                     h('span', {
@@ -270,17 +274,17 @@ window.__ModuleLoader__.load({
                       title: `Test every effort of ${model.slug} with a real call`,
                     }, 'Pin'),
                     h('button', {
-                      style: pinnable ? s.btn : { ...s.btn, opacity: 0.4 },
+                      style: s.btn,
                       onClick: () => setAdding(adding === model.slug ? '' : model.slug),
-                      disabled: busyNow || !pinnable,
-                      title: pinnable ? 'Add this model to the first free slot' : 'Pin it green first',
+                      disabled: busyNow,
+                      title: 'Add this model to the first free slot',
                     }, 'Add')),
                   adding === model.slug
                     ? h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', paddingLeft: 17, flexWrap: 'wrap' } },
                       h('span', { style: { fontSize: 11, color: color.muted } }, 'effort:'),
                       ...model.efforts.map((effort) => {
                         const verdict = verdictOf(model.slug, effort)
-                        const blocked = Boolean(verdict && !verdict.ok)
+                        const blocked = Boolean((verdict && !verdict.ok) || failedFor(model.slug, effort))
                         return h('button', {
                           key: effort,
                           style: blocked ? { ...s.btn, opacity: 0.35, textDecoration: 'line-through' } : s.btn,
@@ -590,21 +594,22 @@ window.__ModuleLoader__.load({
 
         state.failures?.length
           ? h('div', { style: s.card },
-            h('div', { style: s.sectionTitle }, 'Failed configurations'),
-            h('div', { style: s.hint }, 'A failed tier leaves rotation automatically. Restore clears the mark and puts it back.'),
+            h('div', { style: s.sectionTitle }, 'Failed routes'),
+            h('div', { style: s.hint }, 'A tier that failed in real use is removed from the ladder and its route is marked red in the catalog. Clear the mark once the problem is fixed.'),
             ...state.failures.map((failure) => h('div', {
-              key: failure.id,
+              key: failure.key,
               style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
             },
             h('span', { style: { color: color.bad, fontSize: 12 } }, '✕'),
-            h('span', { style: { fontSize: 12, minWidth: 150, color: color.text } }, failure.label),
-            h('span', { style: { ...s.meta, flex: 1 } }, `${failure.route} · ${String(failure.error).slice(0, 140)}`),
-            h('button', { style: s.btn, onClick: () => act({ action: 'clear', id: failure.id }) }, 'Restore'))))
+            h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, failure.route),
+            h('span', { style: { ...s.meta, flex: 1 } }, String(failure.error).slice(0, 140)),
+            h('button', { style: s.btn, onClick: () => act({ action: 'clear', key: failure.key }) }, 'Clear'))))
           : null,
 
         h(Catalog, {
           catalog: state.catalog,
           llm: state.llm,
+          failures: state.failures,
           busy,
           onScan: act,
           onPin: act,

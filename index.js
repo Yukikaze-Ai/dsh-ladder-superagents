@@ -275,17 +275,16 @@ async function recordFailure(cwd, cfg, keys, error) {
 }
 
 /**
- * Take a failed tier out of rotation. The row keeps its configuration so a
- * credential fix is one click away; deleting it would lose the model over a
- * transient rate limit.
+ * A tier that fails in real use leaves the ladder: the slot is freed for a
+ * different model, and the failed route stays marked in the failure list so
+ * the catalog can show it red.
  */
-async function disableTier(cwd, cfg, tierId) {
+async function removeFailedTier(cwd, cfg, tierId) {
   if (!tierId) return
   const ladder = await readLadder(modelsFileOf())
-  const tier = ladder.tiers.find((entry) => entry.id === tierId)
-  if (!tier || tier.enabled === false) return
-  tier.enabled = false
-  await writeLadder(modelsFileOf(), ladder)
+  const next = ladder.tiers.filter((tier) => tier.id !== tierId)
+  if (next.length === ladder.tiers.length) return
+  await writeLadder(modelsFileOf(), { version: 1, tiers: next })
 }
 
 /** A removed tier takes its failure marks with it, so it can be added back. */
@@ -1526,16 +1525,15 @@ export function apply(ctx, config) {
         available: Boolean(availability[index]),
         failure: failureActive(failures[tier.id], cfg) ? failures[tier.id] : null,
       })),
-      // The failure marks belong to a list of their own: the ladder row only
-      // says enabled or disabled.
-      failures: ladder.tiers
-        .filter((tier) => failureActive(failures[tier.id], cfg))
-        .map((tier) => ({
-          id: tier.id,
-          label: tier.label,
-          route: tierRoute(tier),
-          error: String(failures[tier.id].error ?? ''),
-          at: Number(failures[tier.id].at) || 0,
+      // Failures are keyed by route, not by slot: a failed tier is removed
+      // from the ladder, and the route stays marked until it is cleared.
+      failures: Object.entries(failures)
+        .filter(([key, entry]) => key.startsWith('route:') && failureActive(entry, cfg))
+        .map(([key, entry]) => ({
+          key,
+          route: key.slice('route:'.length),
+          error: String(entry.error ?? ''),
+          at: Number(entry.at) || 0,
         })),
     }
   }
@@ -1586,6 +1584,12 @@ export function apply(ctx, config) {
 
     if (body?.action === 'clear') {
       const all = readFailures(cwd, cfg)
+      if (typeof body.key === 'string' && body.key) {
+        delete all[body.key]
+        await mkdir(stateDirOf(), { recursive: true })
+        await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(all, null, 2)}\n`, 'utf8')
+        return settingsState(cwd)
+      }
       const ladder = await readLadder(modelsFileOf())
       const tier = body.id ? ladder.tiers.find((entry) => entry.id === String(body.id)) : undefined
       const drop = new Set()
@@ -2131,8 +2135,8 @@ export function apply(ctx, config) {
         // Mark the tier and take it out of rotation whatever happens next: the
         // failure is a fact about the model, not about this retry decision.
         if (tier?.id) {
-          recordFailure(cwd, cfg, [tier.id, `route:${tierRoute(tier)}`], stop).catch(() => {})
-          disableTier(cwd, cfg, tier.id).catch(() => {})
+          recordFailure(cwd, cfg, [`route:${tierRoute(tier)}`], stop).catch(() => {})
+          removeFailedTier(cwd, cfg, tier.id).catch(() => {})
         }
         if (!cfg.retryOnFailure) return
         const index = tier ? routeChain.findIndex((entry) => entry.id === tier.id) : -1
