@@ -225,7 +225,7 @@ window.__ModuleLoader__.load({
               checked: verifiedOnly,
               onChange: (event) => setVerifiedOnly(event.target.checked),
             }),
-            'verified only'),
+            t('verified only')),
             h('button', {
               style: s.btn,
               onClick: () => run('scan', { action: 'scan' }),
@@ -252,12 +252,12 @@ window.__ModuleLoader__.load({
                 `${catalog.models.length} models · scanned ${scanned} · `
                 + `${allModels.filter(verified).length} verified usable`),
               h('div', { style: { display: 'flex', gap: 14, alignItems: 'center', fontSize: 11, color: color.muted } },
-                h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(true) }), 'pinned usable'),
-                h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: { ...s.dot(true), background: color.warn } }), 'scanned only'),
-                h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(false) }), 'pin failed')),
+                h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(true) }), t('pinned usable')),
+                h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: { ...s.dot(true), background: color.warn } }), t('scanned only')),
+                h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(false) }), t('pin failed'))),
               shownModels.length === 0
                 ? h('div', { style: s.hint }, verifiedOnly
-                  ? 'Nothing verified yet. Uncheck "verified only", then press Pin on a model — one real call proves it.'
+                  ? t('nothing verified hint')
                   : 'The catalog is empty.')
                 : null,
               ...shownModels.map((model) => {
@@ -268,8 +268,8 @@ window.__ModuleLoader__.load({
                 const status = anyFail
                   ? { color: color.bad, label: 'a configuration failed' }
                   : anyOk
-                    ? { color: color.ok, label: 'pinned usable' }
-                    : { color: color.warn, label: 'scanned, not pinned' }
+                    ? { color: color.ok, label: t('pinned usable') }
+                    : { color: color.warn, label: t('scanned, not pinned') }
                 return h('div', { key: model.slug, style: { display: 'flex', flexDirection: 'column', gap: 6 } },
                   h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' } },
                     h('span', {
@@ -291,7 +291,7 @@ window.__ModuleLoader__.load({
                       }),
                       disabled: busyNow,
                       title: `Test every effort of ${model.slug}`,
-                    }, 'Pin'),
+                    }, t('Pin')),
                     h('button', {
                       style: s.btn,
                       onClick: () => setAdding(adding === model.slug ? '' : model.slug),
@@ -335,7 +335,7 @@ window.__ModuleLoader__.load({
               style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'nowrap' },
             },
             h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, `${route.provider}/${route.model}`),
-            h('span', { style: s.chip }, route.defaultEffort ? `default effort ${route.defaultEffort}` : 'no default effort'),
+            h('span', { style: s.chip }, route.defaultEffort ? `default effort ${route.defaultEffort}` : t('no default effort')),
             h('span', { style: { ...s.meta, flex: 1 } }, route.efforts.length ? `efforts ${route.efforts.join(' / ')}` : 'no reasoning metadata'),
             h('button', {
               style: s.btn,
@@ -471,7 +471,7 @@ window.__ModuleLoader__.load({
 
       return h('div', { style: s.card },
         h('div', { style: s.sectionTitle }, t('Policy')),
-        h('div', { style: s.hint }, 'Saving writes this plugin row in the profile config, which restarts it for about a second.'),
+        h('div', { style: s.hint }, t('saving hint')),
         h('div', { style: s.row },
           h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Session scope')),
           h('select', {
@@ -480,21 +480,21 @@ window.__ModuleLoader__.load({
             disabled: busy,
             onChange: (event) => onConfig({ mode: event.target.value }),
           },
-          h('option', { value: 'session' }, 'session (opt-in)'),
+          h('option', { value: 'session' }, t('session (opt-in)')),
           h('option', { value: 'all' }, 'every session'),
           h('option', { value: 'root' }, 'root sessions only'),
           h('option', { value: 'preset' }, 'by preset')),
-          h('span', { style: { ...s.meta, flex: 1 } }, 'which sessions run as SupA; opt-in needs `supa_session enable` once per session')),
+          h('span', { style: { ...s.meta, flex: 1 } }, t('which sessions hint'))),
         h('div', { style: s.row },
           h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Approvals')),
           h('button', {
             style: s.btn,
             disabled: busy,
             onClick: () => onConfig({ autoApprove: !config.autoApprove }),
-          }, config.autoApprove ? 'decide in-process' : 'ask the user'),
+          }, config.autoApprove ? t('decide in-process') : t('ask the user')),
           h('span', { style: { ...s.meta, flex: 1 } }, config.autoApprove
             ? 'a request is granted once and audited in the ledger'
-            : 'a request goes to the human through the approval prompt')),
+            : t('a request goes to the human through the approval prompt'))),
         h('div', { style: s.row },
           h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Authority ceiling')),
           h('select', {
@@ -505,7 +505,7 @@ window.__ModuleLoader__.load({
           },
           h('option', { value: 'workspace' }, 'workspace'),
           h('option', { value: 'full' }, 'full')),
-          h('span', { style: { ...s.meta, flex: 1 } }, 'the most a root SupA holds without asking the human')),
+          h('span', { style: { ...s.meta, flex: 1 } }, t('the most a root SupA holds without asking the human'))),
         h('div', { style: s.row },
           h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Failure cooldown')),
           h('input', {
@@ -519,7 +519,7 @@ window.__ModuleLoader__.load({
             disabled: busy,
             onClick: () => onConfig({ failureCooldownMinutes: Number(minutes) || 0 }),
           }, t('Apply')),
-          h('span', { style: { ...s.meta, flex: 1 } }, 'how long a failed tier stays out of rotation')),
+          h('span', { style: { ...s.meta, flex: 1 } }, t('how long a failed tier stays out of rotation'))),
         h('div', { style: s.row },
           h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Fan-out')),
           h('input', {
@@ -532,7 +532,7 @@ window.__ModuleLoader__.load({
             disabled: busy,
             onClick: () => onConfig({ maxChildren: Number(children) || 1 }),
           }, t('Apply')),
-          h('span', { style: { ...s.meta, flex: 1 } }, 'how many children may run at once')),
+          h('span', { style: { ...s.meta, flex: 1 } }, t('how many children may run at once'))),
         h('div', { style: s.row },
           h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Shell hand-off')),
           h('select', {
@@ -541,18 +541,18 @@ window.__ModuleLoader__.load({
             disabled: busy,
             onChange: (event) => onConfig({ handOffShell: event.target.value }),
           },
-          h('option', { value: 'blocking' }, 'sleeps and loops'),
-          h('option', { value: 'long' }, 'sleeps, builds, tests'),
-          h('option', { value: 'all' }, 'every shell command')),
-          h('span', { style: { ...s.meta, flex: 1 } }, 'which shell calls go to a worker instead of this turn')),
+          h('option', { value: 'blocking' }, t('sleeps and loops')),
+          h('option', { value: 'long' }, t('sleeps, builds, tests')),
+          h('option', { value: 'all' }, t('every shell command'))),
+          h('span', { style: { ...s.meta, flex: 1 } }, t('which shell calls go to a worker instead of this turn'))),
         h('div', { style: s.row },
           h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Questions')),
           h('button', {
             style: s.btn,
             disabled: busy,
             onClick: () => onConfig({ denyBlockingQuestions: !config.denyBlockingQuestions }),
-          }, config.denyBlockingQuestions ? 'refused' : 'allowed'),
-          h('span', { style: { ...s.meta, flex: 1 } }, 'whether ask_user_question may pop the option dialog')),
+          }, config.denyBlockingQuestions ? t('refused') : t('allowed')),
+          h('span', { style: { ...s.meta, flex: 1 } }, t('whether ask_user_question may pop the option dialog'))),
       )
     }
 
@@ -622,7 +622,7 @@ window.__ModuleLoader__.load({
       const summary = useMemo(() => {
         if (!state) return ''
         const usable = tiers.filter((tier) => tier.available && tier.enabled && !tier.failure).length
-        return `${usable}/${tiers.length} usable · ${tiers.length}/10 tiers · autoApprove ${String(state.config.autoApprove)} · authority ${state.config.authority}`
+        return `${usable}/${tiers.length} ${t('usable')} · ${tiers.length}/10 ${t('tiers')} · ${t('autoApprove')} ${String(state.config.autoApprove)} · ${t('authority')} ${state.config.authority}`
       }, [state, tiers])
 
       if (error && !state) {
@@ -875,6 +875,36 @@ window.__ModuleLoader__.load({
       'Apply': '应用',
       'Pin tiers': '验证档位',
       'Loading dsh-ladder-superagents…': '正在加载 dsh-ladder-superagents…',
+      'Pin': '测试',
+      'verified only': '只看已验证',
+      'scanned only': '仅扫描',
+      'pin failed': '验证失败',
+      'pinned usable': '已验证可用',
+      'scanned, not pinned': '已扫描，未验证',
+      'session (opt-in)': '会话（按需启用）',
+      'sleeps and loops': '睡眠与轮询',
+      'sleeps, builds, tests': '睡眠、构建、测试',
+      'every shell command': '所有命令',
+      'no default effort': '无默认 effort',
+      'ask the user': '询问用户',
+      'decide in-process': '进程内决定',
+      'refused': '拒绝',
+      'allowed': '允许',
+      'usable': '可用',
+      'tiers': '档位',
+      'autoApprove': '自动批准',
+      'authority': '权限',
+      'default effort': '默认 effort',
+      'nothing verified hint': '还没有验证过任何模型。取消勾选"只看已验证"，然后点某个模型旁的"测试"——一次真实调用就能证明它可用。',
+      'saving hint': '保存会改写 profile 里的插件行，插件重启约一秒。',
+      'which sessions hint': '哪些会话作为 SupA 运行；按需启用需要每个会话执行一次 `supa_session enable`',
+      'hide unpinned hint': '隐藏未验证或验证失败的模型',
+      'which shell calls go to a worker instead of this turn': '哪些命令转交给子代理，而不是在本轮执行',
+      'how many children may run at once': '同时最多几个子代理',
+      'how long a failed tier stays out of rotation': '失败后多久不再参与调度',
+      'the most a root SupA holds without asking the human': 'SupA 不问人时的最高权限',
+      'whether ask_user_question may pop the option dialog': '是否允许弹出选项对话框',
+      'a request goes to the human through the approval prompt': '请求通过审批提示交给人类',
     }
     const t = (english) => (LOCALE === 'zh' ? (ZH[english] ?? english) : english)
 
@@ -1087,7 +1117,7 @@ window.__ModuleLoader__.load({
           name: 'settings.section',
           id: 'ladder-superagents',
           order: 25,
-          label: 'dsh-ladder-superagents',
+          label: LOCALE === 'zh' ? 'SupA 配置' : 'SupA settings',
         }, SupaSettings))
 
         // One control in the session header: the human switch for `mode: session`.
