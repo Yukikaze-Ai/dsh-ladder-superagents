@@ -28,7 +28,7 @@ Suggested shape: extract the pure decision (tiers + failure map + difficulty →
 chosen tier and chain) into a function, then one Node test file using
 `node:test`. No framework needed.
 
-## 3. Verify or label the nine unverified CLI drivers
+## 3. Verify or label the nine unverified CLI drivers — see [docs/CLI-DRIVERS.md](docs/CLI-DRIVERS.md)
 
 Only `codex` has been run against a working install. kimi, claude, gemini, qwen,
 cursor, opencode, aider, copilot and goose are implemented from each CLI's
@@ -77,3 +77,4 @@ paragraphs.
 - Per-task effort overrides. Effort is part of a tier on purpose: a slot must
   mean one fixed strength.
 - Auto-deleting tiers a user did not delete.
+

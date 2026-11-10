@@ -92,8 +92,11 @@ There is no test runner yet (see ROADMAP item 2). What to do instead:
 
 Always back up `~/.dsh/supa/*.json` before a destructive check.
 
+Verifying one CLI driver is a self-contained task: the exact command line, the account it needs, and the acceptance test are in [docs/CLI-DRIVERS.md](docs/CLI-DRIVERS.md). Nine are open and each one is a good first pull request.
+
 ## Scope
 
 Keep it small. This plugin routes work and verifies models; it does not become a
 workflow engine, a second agent loop, or a UI framework. If a change adds a new
 concept, explain in the pull request why the existing pieces cannot carry it.
+
