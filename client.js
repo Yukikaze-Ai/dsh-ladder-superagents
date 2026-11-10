@@ -140,7 +140,7 @@ window.__ModuleLoader__.load({
         error ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-state-error, #c04040)' } }, error) : null)
     }
 
-    function Catalog({ catalog, busy, onScan, onPin }) {
+    function Catalog({ catalog, llm, busy, onScan, onPin }) {
       const scanned = catalog?.at ? new Date(catalog.at).toLocaleTimeString() : ''
       const verdictOf = (slug, effort) => catalog?.probes?.[`${slug}@${effort}`]
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 } },
@@ -171,6 +171,16 @@ window.__ModuleLoader__.load({
               title: `Test every effort of ${model.slug} with a real call`,
             }, 'Pin'))))
           : h('div', { style: { fontSize: 12, color: muted } }, 'No catalog cached. Scan to read the model list.'),
+        llm?.length
+          ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, paddingTop: 4 } },
+            h('div', { style: { fontSize: 12, color: muted } }, 'Harness routes (read live from the llm service)'),
+            ...llm.map((route) => h('div', {
+              key: `${route.provider}/${route.model}`,
+              style: { fontSize: 12, color: muted },
+            }, `${route.provider}/${route.model} · ${route.efforts.length
+              ? `default ${route.defaultEffort || '?'} · ${route.efforts.join('/')}`
+              : 'no reasoning metadata'}`)))
+          : null,
       )
     }
 
@@ -233,20 +243,6 @@ window.__ModuleLoader__.load({
             h('div', { style: styles.title }, 'Model ladder'),
             h('div', { style: styles.hint }, `${summary} · ${state.file}`)),
           h('button', { style: styles.button, onClick: () => load(cwd), disabled: busy }, 'Refresh')),
-        state.workspaces.length > 1
-          ? h('select', {
-            style: { ...styles.input, maxWidth: 420 },
-            value: cwd,
-            onChange: (event) => {
-              try {
-                localStorage.setItem('dsh-supa.cwd', event.target.value)
-              } catch {
-                // storage unavailable: the choice still applies to this render
-              }
-              load(event.target.value)
-            },
-          }, ...state.workspaces.map((workspace) => h('option', { key: workspace.id, value: workspace.path }, `${workspace.title} — ${workspace.path}`)))
-          : null,
         tiers.length === 0
           ? h('div', { style: { fontSize: 13, color: muted } }, 'The ladder is empty: every child inherits the parent route.')
           : h('table', { style: styles.table },
@@ -264,7 +260,7 @@ window.__ModuleLoader__.load({
                 count: tiers.length,
                 onAction: act,
               })))),
-        h(Catalog, { catalog: state.catalog, busy, onScan: act, onPin: act }),
+        h(Catalog, { catalog: state.catalog, llm: state.llm, busy, onScan: act, onPin: act }),
         h(AddForm, { drivers: state.drivers, onAdd: act }),
         error ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-state-error, #c04040)' } }, error) : null,
         h('div', { style: styles.hint },

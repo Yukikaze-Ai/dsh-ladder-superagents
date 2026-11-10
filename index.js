@@ -227,12 +227,24 @@ function lanesOf(records) {
 
 // ------------------------------------------------------------------ model ladder
 
-function modelsFileOf(cwd, cfg) {
-  return join(ledgerDirOf(cwd, cfg), 'models.json')
+/**
+ * Profile-level state: the model ladder, its failure marks and the Codex
+ * catalog describe this machine, not one workspace, so they live beside the
+ * profile and every workspace reads the same ladder. Only the ledger and the
+ * child queues stay workspace-scoped.
+ */
+function stateDirOf() {
+  const profile = process.env.DSH_PROFILE_DIR
+  if (profile) return join(profile, 'supa')
+  return join(homedir(), '.dsh', 'supa')
 }
 
-function failuresFileOf(cwd, cfg) {
-  return join(ledgerDirOf(cwd, cfg), 'failures.json')
+function modelsFileOf() {
+  return join(stateDirOf(), 'models.json')
+}
+
+function failuresFileOf() {
+  return join(stateDirOf(), 'failures.json')
 }
 
 /** Tier failures are runtime state, kept out of the user-owned ladder file. */
@@ -254,7 +266,7 @@ async function recordFailure(cwd, cfg, key, error) {
   const file = failuresFileOf(cwd, cfg)
   const all = readFailures(cwd, cfg)
   all[key] = { at: Date.now(), error: String(error ?? '').slice(0, 300) }
-  await mkdir(ledgerDirOf(cwd, cfg), { recursive: true })
+  await mkdir(stateDirOf(), { recursive: true })
   await writeFile(file, `${JSON.stringify(all, null, 2)}\n`, 'utf8')
 }
 
@@ -359,7 +371,7 @@ async function scanCodexModels(cfg, cwd) {
     contextWindow: entry.context_window ?? 0,
   }))
 
-  const cacheFile = join(ledgerDirOf(cwd, cfg), 'codex-models.json')
+  const cacheFile = join(stateDirOf(), 'codex-models.json')
   let probes = {}
   try {
     probes = JSON.parse(readFileSync(cacheFile, 'utf8')).probes ?? {}
@@ -367,7 +379,7 @@ async function scanCodexModels(cfg, cwd) {
     // first scan
   }
 
-  await mkdir(ledgerDirOf(cwd, cfg), { recursive: true })
+  await mkdir(stateDirOf(), { recursive: true })
   await writeFile(cacheFile, `${JSON.stringify({ at: Date.now(), models, probes }, null, 2)}\n`, 'utf8')
   return { models, probes, cacheFile }
 }
@@ -382,7 +394,7 @@ async function pinCodexTargets(cfg, cwd, targets, options = {}) {
   const codex = findCodex(cfg)
   if (!existsSync(codex)) throw new Error(`codex CLI not found at ${codex}; set codexCommand or install Codex`)
 
-  const cacheFile = join(ledgerDirOf(cwd, cfg), 'codex-models.json')
+  const cacheFile = join(stateDirOf(), 'codex-models.json')
   let cache = { at: 0, models: [], probes: {} }
   try {
     cache = JSON.parse(readFileSync(cacheFile, 'utf8'))
@@ -1144,7 +1156,7 @@ export function apply(ctx, config) {
         })
         if (ladder.tiers.some((tier) => tier.kind === 'codex')) lines.push(`codex binary: ${findCodex(cfg)}`)
         try {
-          const cached = JSON.parse(readFileSync(join(ledgerDirOf(cwd, cfg), 'codex-models.json'), 'utf8'))
+          const cached = JSON.parse(readFileSync(join(stateDirOf(), 'codex-models.json'), 'utf8'))
           const age = Math.max(0, Math.round((Date.now() - cached.at) / 60000))
           lines.push(`codex catalog: ${cached.models.length} models, cached ${age}m ago; run \`scan\` to refresh`)
         } catch {
@@ -1178,7 +1190,7 @@ export function apply(ctx, config) {
         const next = args.id
           ? Object.fromEntries(Object.entries(all).filter(([key]) => key !== args.id))
           : {}
-        await mkdir(ledgerDirOf(cwd, cfg), { recursive: true })
+        await mkdir(stateDirOf(), { recursive: true })
         await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(next, null, 2)}\n`, 'utf8')
         return args.id ? `cleared the failure mark on ${args.id}` : 'cleared every tier failure mark'
       }
@@ -1296,7 +1308,7 @@ export function apply(ctx, config) {
    * effort it supports; without one, the codex tiers already in the ladder.
    */
   const pinTargetsFor = async (cwd, requestedModel) => {
-    const cacheFile = join(ledgerDirOf(cwd, cfg), 'codex-models.json')
+    const cacheFile = join(stateDirOf(), 'codex-models.json')
     let models = []
     try {
       models = JSON.parse(readFileSync(cacheFile, 'utf8')).models ?? []
@@ -1321,6 +1333,38 @@ export function apply(ctx, config) {
     return pinCodexTargets(cfg, cwd, targets, { force })
   }
 
+  /**
+   * The harness's own routes, as opposed to the Codex CLI's catalog. One row
+   * per provider/model with the reasoning efforts that model actually accepts.
+   */
+  const collectLlmRoutes = async () => {
+    const llm = ctx.get?.('llm')
+    if (!llm?.listProviders) return []
+    const routes = []
+    const signal = typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(8000) : undefined
+    for (const provider of llm.listProviders()) {
+      let models = []
+      try {
+        models = (await llm.listModels(provider.id)) ?? []
+      } catch {
+        continue
+      }
+      for (const model of models) {
+        let efforts = []
+        let defaultEffort = ''
+        try {
+          const info = await llm.resolveModelInfo(provider.id, model.id, signal)
+          efforts = (info?.reasoning?.efforts ?? []).map((effort) => effort.id)
+          defaultEffort = info?.reasoning?.defaultEffort ?? ''
+        } catch {
+          // a provider without published reasoning metadata
+        }
+        routes.push({ provider: provider.id, model: model.id, name: model.name ?? model.id, efforts, defaultEffort })
+      }
+    }
+    return routes
+  }
+
   const jsonResponse = (data, status = 200) => new Response(JSON.stringify(data), {
     status,
     headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
@@ -1333,7 +1377,7 @@ export function apply(ctx, config) {
     const availability = await Promise.all(ladder.tiers.map((tier) => tierAvailable(tier)))
     let catalog = null
     try {
-      catalog = JSON.parse(readFileSync(join(ledgerDirOf(cwd, cfg), 'codex-models.json'), 'utf8'))
+      catalog = JSON.parse(readFileSync(join(stateDirOf(), 'codex-models.json'), 'utf8'))
     } catch {
       // no catalog cached yet
     }
@@ -1342,6 +1386,9 @@ export function apply(ctx, config) {
       cwd,
       file,
       workspaces: workspaceList(),
+      // Codex is an external CLI, so its catalog is cached from a scan; the
+      // harness's own routes are read live from the llm service instead.
+      llm: await collectLlmRoutes(),
       drivers: Object.keys(CLI_DRIVERS),
       catalog,
       config: {
@@ -1382,7 +1429,7 @@ export function apply(ctx, config) {
       const next = body.id
         ? Object.fromEntries(Object.entries(all).filter(([key]) => key !== String(body.id)))
         : {}
-      await mkdir(ledgerDirOf(cwd, cfg), { recursive: true })
+      await mkdir(stateDirOf(), { recursive: true })
       await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(next, null, 2)}\n`, 'utf8')
       return settingsState(cwd)
     }
