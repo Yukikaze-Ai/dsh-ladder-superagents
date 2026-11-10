@@ -197,6 +197,12 @@ window.__ModuleLoader__.load({
         : pending === 'pin-tiers'
           ? 'Pinning the ladder tiers — one real call each…'
           : 'Scanning `codex debug models`…'
+      const verified = (model) => {
+        const verdicts = model.efforts.map((effort) => verdictOf(model.slug, effort)).filter(Boolean)
+        return verdicts.length > 0 && verdicts.every((verdict) => verdict.ok)
+      }
+      const allModels = catalog?.models ?? []
+      const shownModels = verifiedOnly ? allModels.filter(verified) : allModels
 
       return h('div', { style: s.card },
         h('style', null, '@keyframes supaPulse{0%,100%{opacity:.35}50%{opacity:1}}'),
@@ -213,17 +219,20 @@ window.__ModuleLoader__.load({
               onChange: (event) => setVerifiedOnly(event.target.checked),
             }),
             'verified only'),
-            h('button', { style: s.btn, onClick: () => run('scan', { action: 'scan' }), disabled: busyNow }, 'Scan'),
+            h('button', {
+              style: s.btn,
+              onClick: () => run('scan', { action: 'scan' }),
+              disabled: busyNow,
+              title: 'Read the model catalog from the CLI. Free: no request is sent to any model.',
+            }, 'Scan'),
             h('button', {
               style: canPinTiers ? s.btn : { ...s.btn, opacity: 0.4 },
               onClick: () => run('pin-tiers', { action: 'pin' }),
               disabled: busyNow || !canPinTiers,
               title: canPinTiers
-                ? 'Pin the codex tiers currently in the ladder'
+                ? 'Verify the codex tiers in the ladder: one real call per configuration, so it consumes that model\'s tokens'
                 : 'The ladder has no CLI tier to pin — pin a catalog model instead',
             }, 'Pin tiers'))),
-        h('div', { style: s.warn },
-          'Scan reads the catalog only. Pinning — tiers or one model — sends one real call per model+effort configuration, so it consumes that model\'s tokens/usage.'),
         pending
           ? h('div', {
             style: { fontSize: 12, color: color.muted, animation: 'supaPulse 1.2s ease-in-out infinite', padding: '8px 0' },
@@ -232,19 +241,17 @@ window.__ModuleLoader__.load({
             ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
               h('div', { style: s.hint },
                 `${catalog.models.length} models · scanned ${scanned} · `
-                + `${catalog.models.filter((model) => {
-                  const verdicts = model.efforts.map((effort) => verdictOf(model.slug, effort)).filter(Boolean)
-                  return verdicts.length > 0 && verdicts.every((verdict) => verdict.ok)
-                }).length} verified usable`),
+                + `${allModels.filter(verified).length} verified usable`),
               h('div', { style: { display: 'flex', gap: 14, alignItems: 'center', fontSize: 11, color: color.muted } },
                 h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(true) }), 'pinned usable'),
                 h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: { ...s.dot(true), background: color.warn } }), 'scanned only'),
                 h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(false) }), 'pin failed')),
-              ...catalog.models.filter((model) => {
-                if (!verifiedOnly) return true
-                const verdicts = model.efforts.map((effort) => verdictOf(model.slug, effort)).filter(Boolean)
-                return verdicts.length > 0 && verdicts.every((verdict) => verdict.ok)
-              }).map((model) => {
+              shownModels.length === 0
+                ? h('div', { style: s.hint }, verifiedOnly
+                  ? 'Nothing verified yet. Uncheck "verified only", then press Pin on a model — one real call proves it.'
+                  : 'The catalog is empty.')
+                : null,
+              ...shownModels.map((model) => {
                 const verdicts = model.efforts.map((effort) => verdictOf(model.slug, effort)).filter(Boolean)
                 const anyOk = verdicts.some((verdict) => verdict.ok)
                 const anyFail = verdicts.some((verdict) => !verdict.ok)
@@ -601,8 +608,13 @@ window.__ModuleLoader__.load({
               style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
             },
             h('span', { style: { color: color.bad, fontSize: 12 } }, '✕'),
-            h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, failure.route),
-            h('span', { style: { ...s.meta, flex: 1 } }, String(failure.error).slice(0, 140)),
+            h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, failure.label ?? failure.route),
+            h('span', { style: { ...s.meta, flex: 1 } }, `${failure.route} · ${String(failure.error).slice(0, 120)}`),
+            h('button', {
+              style: { ...s.btn, color: color.bad },
+              onClick: () => act({ action: 'retry', key: failure.key }),
+              title: 'Probe this configuration once; it returns to the ladder only if it answers',
+            }, 'Retry'),
             h('button', { style: s.btn, onClick: () => act({ action: 'clear', key: failure.key }) }, 'Clear'))))
           : null,
 

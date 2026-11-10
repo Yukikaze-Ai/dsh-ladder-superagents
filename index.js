@@ -264,30 +264,66 @@ function failureActive(entry, cfg) {
   return Boolean(entry && Number(entry.at) && Date.now() - Number(entry.at) < cfg.failureCooldownMs)
 }
 
-async function recordFailure(cwd, cfg, keys, error) {
+async function recordFailure(cwd, cfg, keys, error, tier = null) {
   const list = (Array.isArray(keys) ? keys : [keys]).filter(Boolean)
   if (list.length === 0) return
   const file = failuresFileOf(cwd, cfg)
   const all = readFailures(cwd, cfg)
   const at = Date.now()
   for (const key of list) {
-    all[key] = { at, error: String(error ?? '').slice(0, 300) }
+    all[key] = { at, error: String(error ?? '').slice(0, 300), ...(tier ? { tier } : {}) }
   }
   await mkdir(stateDirOf(), { recursive: true })
   await writeFile(file, `${JSON.stringify(all, null, 2)}\n`, 'utf8')
 }
 
 /**
- * A tier that fails in real use leaves the ladder: the slot is freed for a
- * different model, and the failed route stays marked in the failure list so
- * the catalog can show it red.
+ * A failed tier leaves the ladder. Its configuration is kept in the failure
+ * record so a later Retry can put it back once it answers.
  */
-async function removeFailedTier(cwd, cfg, tierId) {
+async function dropTier(cwd, cfg, tierId) {
   if (!tierId) return
   const ladder = await readLadder(modelsFileOf())
   const next = ladder.tiers.filter((tier) => tier.id !== tierId)
   if (next.length === ladder.tiers.length) return
   await writeLadder(modelsFileOf(), { version: 1, tiers: next })
+}
+
+/** Probe one CLI tier with a single real call, reusing its driver. */
+async function probeCliTier(cfg, tier) {
+  const driver = CLI_DRIVERS[driverOf(tier)]
+  if (!driver) return { ok: false, error: `unknown CLI driver "${driverOf(tier)}"` }
+  const command = resolveOnPath(tier.command || driver.bin(cfg) || driverOf(tier))
+  if (!command) return { ok: false, error: `${driverOf(tier)} CLI not found` }
+  const outFile = join(tmpdir(), `supa-probe-${randomUUID().slice(0, 8)}.txt`)
+  const args = driver.args({
+    cfg,
+    model: tier.model,
+    effort: tier.reasoningEffort,
+    cwd: process.cwd(),
+    outFile,
+    prompt: 'Reply with the single word: ok',
+    authority: 'workspace',
+  })
+  const shell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)
+  try {
+    const run = await runCodexCli(command, shell ? args.map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg)) : args, {
+      input: driver.prompt === 'stdin' ? 'Reply with the single word: ok' : '',
+      timeoutMs: Math.min(cfg.cliTimeoutMs, 120000),
+      shell,
+    })
+    const text = `${run.stdout}`.trim()
+    if (run.code === 0 && text) return { ok: true, answer: text.slice(0, 60) }
+    return { ok: false, error: `exit ${run.code}${run.stderr.trim() ? `: ${run.stderr.trim().slice(-160)}` : ''}` }
+  } catch (error) {
+    return { ok: false, error: String(error?.message ?? error) }
+  } finally {
+    try {
+      unlinkSync(outFile)
+    } catch {
+      // already gone
+    }
+  }
 }
 
 /** A removed tier takes its failure marks with it, so it can be added back. */
@@ -664,7 +700,7 @@ function cliCommandFor(tier, cfg) {
 /** Run one CLI to completion, capture both streams, and honour a deadline. */
 function runCodexCli(exe, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(exe, args, { cwd: options.cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn(exe, args, { cwd: options.cwd, windowsHide: true, shell: options.shell === true, stdio: ['pipe', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
     let settled = false
@@ -1535,6 +1571,7 @@ export function apply(ctx, config) {
         .map(([key, entry]) => ({
           key,
           route: key.slice('route:'.length),
+          label: entry.tier?.label ?? key.slice('route:'.length),
           error: String(entry.error ?? ''),
           at: Number(entry.at) || 0,
         })),
@@ -1583,6 +1620,44 @@ export function apply(ctx, config) {
       const result = await pinNow(cwd, body.model, body.force === true)
       const next = await settingsState(cwd)
       return { ...next, pin: result.verdicts }
+    }
+
+    if (body?.action === 'retry') {
+      const key = String(body.key ?? '')
+      const all = readFailures(cwd, cfg)
+      const entry = all[key]
+      if (!entry) throw new Error(`no failure record for ${key || '(empty key)'}`)
+      if (!entry.tier) throw new Error('this failure has no saved configuration; add the model again')
+      const pending = normalizeTier(entry.tier, 0)
+      const verdict = isCliTier(pending)
+        ? await probeCliTier(cfg, pending)
+        : (await tierAvailable(pending))
+          ? { ok: true }
+          : { ok: false, error: 'the llm service does not resolve this route' }
+
+      if (!verdict.ok) {
+        entry.at = Date.now()
+        entry.error = String(verdict.error ?? '').slice(0, 300)
+        await mkdir(stateDirOf(), { recursive: true })
+        await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(all, null, 2)}\n`, 'utf8')
+        return { ...(await settingsState(cwd)), retry: { ok: false, error: entry.error } }
+      }
+
+      delete all[key]
+      await mkdir(stateDirOf(), { recursive: true })
+      await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(all, null, 2)}\n`, 'utf8')
+
+      const used = new Set(ladder.tiers.map((item) => item.slot))
+      if (used.size >= 10) throw new Error('all ten slots are taken; remove one before retrying this back in')
+      let free = 1
+      while (used.has(free)) free += 1
+      const ids = new Set(ladder.tiers.map((item) => item.id))
+      let id = pending.id
+      while (ids.has(id)) id = `${pending.id}-${free}`
+      ladder.tiers.push(normalizeTier({ ...entry.tier, id, slot: free, enabled: true }, free - 1))
+      ladder.tiers.sort((a, b) => a.slot - b.slot)
+      await writeLadder(modelsFileOf(), ladder)
+      return { ...(await settingsState(cwd)), retry: { ok: true, slot: free } }
     }
 
     if (body?.action === 'clear') {
@@ -2155,8 +2230,8 @@ export function apply(ctx, config) {
         // Out of same-tier attempts: the route is a fact about the model, so
         // mark it and free the slot.
         if (tier?.id) {
-          recordFailure(cwd, cfg, [`route:${tierRoute(tier)}`], stop).catch(() => {})
-          removeFailedTier(cwd, cfg, tier.id).catch(() => {})
+          recordFailure(cwd, cfg, [`route:${tierRoute(tier)}`], stop, tier).catch(() => {})
+          dropTier(cwd, cfg, tier.id).catch(() => {})
         }
         if (!cfg.retryOnFailure) return
         const index = tier ? routeChain.findIndex((entry) => entry.id === tier.id) : -1
