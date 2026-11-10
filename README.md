@@ -19,6 +19,10 @@ session, following the concept of
 
 Package id: `dsh-ladder-superagents`.
 
+![The model ladder: ten slots, five filled, each with its own ceiling](docs/img/settings-ladder.png)
+
+![The policy card: session scope, approvals, authority, cooldown, fan-out and shell hand-off](docs/img/settings-policy.png)
+
 The prototype's idea, reduced to three properties per session:
 
 | Property | Prototype mechanism | This plugin |

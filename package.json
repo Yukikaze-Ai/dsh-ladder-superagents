@@ -21,7 +21,8 @@
     "ROADMAP.md",
     "CHANGELOG.md",
     "docs/*.md",
-    "LICENSE"
+    "LICENSE",
+    "docs/img/*.png"
   ],
   "os": [
     "win32"
