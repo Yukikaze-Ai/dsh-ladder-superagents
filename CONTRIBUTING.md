@@ -39,6 +39,13 @@ its `id` **must equal the package name**. No build step.
    plugin_manager set_plugin include:supa  enabled=false
    plugin_manager set_plugin include:supa  enabled=true
    ```
+
+   **Check what that wrote.** If the disable reports `overridden` ("a
+   higher-priority layer overrides it"), the command still saved
+   `disabled: true` into your profile's `cordis.patch.yml` — and the next DSH
+   restart will honour it and leave the plugin unmounted, which looks exactly
+   like "my changes broke it". Open the file and delete that line, or replace it
+   with `enabled: true`, before restarting.
 4. A **client** change (`client.js`) needs a page refresh on top of that.
 
 State lives outside the repo:
