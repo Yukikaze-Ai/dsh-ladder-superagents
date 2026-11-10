@@ -163,7 +163,7 @@ window.__ModuleLoader__.load({
       h('div', { style: s.actions },
         h('button', { style: s.btnIcon, onClick: () => move(tier.slot - 1), disabled: tier.slot <= 1, title: 'Move up a tier' }, '↑'),
         h('button', { style: s.btnIcon, onClick: () => move(tier.slot + 1), disabled: tier.slot >= 10, title: 'Move down a tier' }, '↓'),
-        h('button', { style: s.btn, onClick: toggle, title: tier.enabled ? 'Disable this tier' : 'Enable this tier' }, tier.enabled ? 'Off' : 'On'),
+        h('button', { style: s.btn, onClick: toggle, title: tier.enabled ? 'Disable this tier' : 'Enable this tier' }, tier.enabled ? t('Off') : 'On'),
         tier.failure
           ? h('button', {
             style: { ...s.btn, color: color.bad },
@@ -178,7 +178,7 @@ window.__ModuleLoader__.load({
             else setConfirming(true)
           },
           title: confirming ? 'Click again to remove this tier' : 'Remove this tier',
-        }, confirming ? 'Sure?' : '✕')))
+        }, confirming ? t('Sure?') : '✕')))
     }
 
     function Catalog({ catalog, llm, failures, busy, onScan, onPin, onAdd, canPinTiers }) {
@@ -214,7 +214,7 @@ window.__ModuleLoader__.load({
       return h('div', { style: s.card },
         h('style', null, '@keyframes supaPulse{0%,100%{opacity:.35}50%{opacity:1}}'),
         h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
-          h('div', { style: s.sectionTitle }, 'Codex model catalog'),
+          h('div', { style: s.sectionTitle }, t('Codex model catalog')),
           h('div', { style: s.actions },
             h('label', {
               style: { display: 'flex', gap: 5, alignItems: 'center', fontSize: 12, color: color.muted, cursor: 'pointer' },
@@ -241,7 +241,7 @@ window.__ModuleLoader__.load({
               title: canPinTiers
                 ? 'Pin the codex tiers currently in the ladder'
                 : 'The ladder has no CLI tier to pin — pin a catalog model instead',
-            }, 'Pin tiers'))),
+            }, t('Pin tiers')))),
         pending
           ? h('div', {
             style: { fontSize: 12, color: color.muted, animation: 'supaPulse 1.2s ease-in-out infinite', padding: '8px 0' },
@@ -297,7 +297,7 @@ window.__ModuleLoader__.load({
                       onClick: () => setAdding(adding === model.slug ? '' : model.slug),
                       disabled: busyNow,
                       title: 'Add this model to the first free slot',
-                    }, 'Add')),
+                    }, t('Add'))),
                   adding === model.slug
                     ? h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', paddingLeft: 17, flexWrap: 'wrap' } },
                       h('span', { style: { fontSize: 11, color: color.muted } }, 'effort:'),
@@ -326,10 +326,10 @@ window.__ModuleLoader__.load({
                       }))
                     : null)
               }))
-            : h('div', { style: s.hint }, 'No catalog cached. Scan to read the model list.'),
+            : h('div', { style: s.hint }, t('No catalog cached. Scan to read the model list.')),
         llm?.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 6 } },
-            h('div', { style: s.hint }, 'Harness routes (read live from the llm service)'),
+            h('div', { style: s.hint }, t('Harness routes (read live from the llm service)')),
             ...llm.map((route) => h('div', {
               key: `${route.provider}/${route.model}`,
               style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'nowrap' },
@@ -351,7 +351,7 @@ window.__ModuleLoader__.load({
                   reasoningEffort: route.defaultEffort || undefined,
                 },
               }),
-            }, 'Add'))))
+            }, t('Add')))))
           : null,
         confirming
           ? h('div', {
@@ -370,7 +370,7 @@ window.__ModuleLoader__.load({
             style: { ...s.card, width: 380, maxWidth: '90vw', boxShadow: '0 12px 48px rgba(0,0,0,.28)' },
             onClick: (event) => event.stopPropagation(),
           },
-          h('div', { style: s.sectionTitle }, 'This spends tokens'),
+          h('div', { style: s.sectionTitle }, t('This spends tokens')),
           h('div', { style: { fontSize: 12, color: color.muted, lineHeight: 1.6 } }, confirming.text),
           h('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
             h('button', { style: s.btn, onClick: () => setConfirming(null) }, 'Cancel'),
@@ -420,7 +420,7 @@ window.__ModuleLoader__.load({
       }
 
       return h('div', { style: s.card },
-        h('div', { style: s.sectionTitle }, 'Add a tier'),
+        h('div', { style: s.sectionTitle }, t('Add a tier')),
         h('div', { style: s.hint }, disabled
           ? 'All ten slots are taken — remove one to add another.'
           : 'Added to the first free slot; drag it into place afterwards.'),
@@ -455,7 +455,7 @@ window.__ModuleLoader__.load({
             value: label,
             onChange: (event) => setLabel(event.target.value),
           }),
-          h('button', { style: disabled ? { ...s.btnPrimary, opacity: 0.4 } : s.btnPrimary, onClick: submit, disabled }, 'Add')),
+          h('button', { style: disabled ? { ...s.btnPrimary, opacity: 0.4 } : s.btnPrimary, onClick: submit, disabled }, t('Add'))),
         error ? h('div', { style: s.error }, error) : null)
     }
 
@@ -470,10 +470,10 @@ window.__ModuleLoader__.load({
       }, [config?.maxChildren])
 
       return h('div', { style: s.card },
-        h('div', { style: s.sectionTitle }, 'Policy'),
+        h('div', { style: s.sectionTitle }, t('Policy')),
         h('div', { style: s.hint }, 'Saving writes this plugin row in the profile config, which restarts it for about a second.'),
         h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Session scope'),
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Session scope')),
           h('select', {
             style: s.input,
             value: config.mode,
@@ -486,7 +486,7 @@ window.__ModuleLoader__.load({
           h('option', { value: 'preset' }, 'by preset')),
           h('span', { style: { ...s.meta, flex: 1 } }, 'which sessions run as SupA; opt-in needs `supa_session enable` once per session')),
         h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Approvals'),
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Approvals')),
           h('button', {
             style: s.btn,
             disabled: busy,
@@ -496,7 +496,7 @@ window.__ModuleLoader__.load({
             ? 'a request is granted once and audited in the ledger'
             : 'a request goes to the human through the approval prompt')),
         h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Authority ceiling'),
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Authority ceiling')),
           h('select', {
             style: s.input,
             value: config.authority,
@@ -507,7 +507,7 @@ window.__ModuleLoader__.load({
           h('option', { value: 'full' }, 'full')),
           h('span', { style: { ...s.meta, flex: 1 } }, 'the most a root SupA holds without asking the human')),
         h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Failure cooldown'),
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Failure cooldown')),
           h('input', {
             style: { ...s.input, width: 80 },
             value: minutes,
@@ -518,10 +518,10 @@ window.__ModuleLoader__.load({
             style: s.btn,
             disabled: busy,
             onClick: () => onConfig({ failureCooldownMinutes: Number(minutes) || 0 }),
-          }, 'Apply'),
+          }, t('Apply')),
           h('span', { style: { ...s.meta, flex: 1 } }, 'how long a failed tier stays out of rotation')),
         h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Fan-out'),
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Fan-out')),
           h('input', {
             style: { ...s.input, width: 70 },
             value: children,
@@ -531,10 +531,10 @@ window.__ModuleLoader__.load({
             style: s.btn,
             disabled: busy,
             onClick: () => onConfig({ maxChildren: Number(children) || 1 }),
-          }, 'Apply'),
+          }, t('Apply')),
           h('span', { style: { ...s.meta, flex: 1 } }, 'how many children may run at once')),
         h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Shell hand-off'),
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Shell hand-off')),
           h('select', {
             style: s.input,
             value: config.handOffShell,
@@ -546,7 +546,7 @@ window.__ModuleLoader__.load({
           h('option', { value: 'all' }, 'every shell command')),
           h('span', { style: { ...s.meta, flex: 1 } }, 'which shell calls go to a worker instead of this turn')),
         h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Questions'),
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Questions')),
           h('button', {
             style: s.btn,
             disabled: busy,
@@ -629,13 +629,13 @@ window.__ModuleLoader__.load({
         return h('div', { style: s.page }, h('div', { style: s.error }, `dsh-ladder-superagents: ${error}`))
       }
       if (!state) {
-        return h('div', { style: s.page }, h('div', { style: s.hint }, 'Loading dsh-ladder-superagents…'))
+        return h('div', { style: s.page }, h('div', { style: s.hint }, t('Loading dsh-ladder-superagents…')))
       }
 
       return h('div', { style: s.page },
         h('div', { style: s.head },
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
-            h('div', { style: s.title }, 'Model ladder'),
+            h('div', { style: s.title }, t('Model ladder')),
             h('div', { style: s.sub }, summary),
             h('div', { style: s.sub }, state.file)),
           h('div', { style: s.actions },
@@ -651,13 +651,13 @@ window.__ModuleLoader__.load({
                 }
               },
               title: 'Replace the ladder with the built-in default (four thinking levels of one model)',
-            }, resetting ? 'Sure?' : 'Reset'),
-            h('button', { style: s.btn, onClick: () => load(cwd), disabled: busy }, 'Refresh'))),
+            }, resetting ? t('Sure?') : t('Reset')),
+            h('button', { style: s.btn, onClick: () => load(cwd), disabled: busy }, t('Refresh')))),
 
         state.ladderReady === false
           ? h('div', { style: s.card },
-            h('div', { style: s.sectionTitle }, 'T1 是空的'),
-            h('div', { style: s.hint }, '没有 T1 就没有能接住最难任务的档位。此刻 SupA 无法启用，派活也会被拒绝；先在槽位 1 放一个模型。'))
+            h('div', { style: s.sectionTitle }, t('T1 is empty')),
+            h('div', { style: s.hint }, t('T1 is empty hint')))
           : null,
 
         h('div', { style: s.section },
@@ -684,14 +684,14 @@ window.__ModuleLoader__.load({
                 },
               },
               h('div', { style: { width: 28, textAlign: 'center', fontSize: 12, color: color.muted, lineHeight: '20px', paddingLeft: 12 } }, `T${slot}`),
-              h('div', { style: s.body }, h('div', { style: s.meta }, 'empty slot — drag a tier here')))
+              h('div', { style: s.body }, h('div', { style: s.meta }, t('empty slot — drag a tier here'))))
           })),
 
         h(Policy, { config: state.config, busy, onConfig: configure }),
 
         state.failures?.length
           ? h('div', { style: s.card },
-            h('div', { style: s.sectionTitle }, 'Failed routes'),
+            h('div', { style: s.sectionTitle }, t('Failed routes')),
             h('div', { style: s.hint }, 'A tier that failed in real use is removed from the ladder and its route is marked red in the catalog. Clear the mark once the problem is fixed.'),
             ...state.failures.map((failure) => h('div', {
               key: failure.key,
@@ -719,7 +719,7 @@ window.__ModuleLoader__.load({
             style: { ...s.btn, alignSelf: 'flex-start' },
             onClick: () => setManualOpen(true),
             title: 'For a model that is in neither the codex catalog nor the live llm routes',
-          }, 'Add a model manually'),
+          }, t('Add a model manually')),
 
         error ? h('div', { style: s.error }, error) : null,
         h('div', { style: s.hint },
@@ -805,11 +805,87 @@ window.__ModuleLoader__.load({
       'SupA')
     }
 
+    // Two whole languages: Chinese when the app runs in Chinese, English
+    // otherwise. Keys are the English text, so a missing translation falls back
+    // to English instead of showing a placeholder.
+    const LOCALE = (() => {
+      let value = ''
+      try {
+        value = String(document?.documentElement?.lang || '')
+      } catch {
+        value = ''
+      }
+      if (!value) {
+        try {
+          value = String(navigator?.language || '')
+        } catch {
+          value = ''
+        }
+      }
+      return value.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+    })()
+
+    const ZH = {
+      'Model ladder': '模型阶梯',
+      'Model usage': t('Model usage'),
+      'Per tier': t('Per tier'),
+      'Completion': t('Completion'),
+      'Call timeline': t('Call timeline'),
+      'Recent calls': t('Recent calls'),
+      '1 hour': '1 小时',
+      '1 day': '1 天',
+      '7 days': '7 天',
+      'All': '全部',
+      'all time': '全部时间',
+      'last 1 hour': '最近 1 小时',
+      'last 1 day': '最近 1 天',
+      'last 7 days': '最近 7 天',
+      'last 30 days': '最近 30 天',
+      'last': '最近',
+      'hours': '小时',
+      'records': '条记录',
+      'done': '完成',
+      'failed': '失败',
+      'loading usage…': '正在加载用量…',
+      'per tier hint': t('per tier hint'),
+      'timeline hint': t('timeline hint'),
+      'T1 is empty': t('T1 is empty'),
+      'T1 is empty hint': t('T1 is empty hint'),
+      'empty slot — drag a tier here': '空槽位 — 把模型拖到这里',
+      'Reset': '重置',
+      'Sure?': '确定？',
+      'Refresh': '刷新',
+      'Policy': '策略',
+      'Session scope': '会话范围',
+      'Approvals': '审批',
+      'Authority ceiling': '权限上限',
+      'Failure cooldown': '失败冷却',
+      'Questions': '提问',
+      'Fan-out': '并发',
+      'Shell hand-off': '命令转交',
+      'Codex model catalog': 'Codex 模型目录',
+      'Harness routes (read live from the llm service)': 'Harness 路由（从 llm 服务实时读取）',
+      'No catalog cached. Scan to read the model list.': '还没有缓存目录。点 Scan 读取模型列表。',
+      'Failed routes': '失败的档位',
+      'Add a tier': '添加档位',
+      'Add': '添加',
+      'Add a model manually': '手动添加模型',
+      'This spends tokens': '这会消耗 token',
+      'Off': '禁用',
+      'Remove': '移除',
+      'Apply': '应用',
+      'Scan': '扫描',
+      'Pin tiers': '验证档位',
+      'Loading dsh-ladder-superagents…': '正在加载 dsh-ladder-superagents…',
+    }
+
+    const t = (english) => (LOCALE === 'zh' ? (ZH[english] ?? english) : english)
+
     const SEGMENTS = [
-      ['1', '1 小时'],
-      ['24', '1 天'],
-      ['168', '7 天'],
-      ['0', '全部'],
+      ['1', t('1 hour')],
+      ['24', t('1 day')],
+      ['168', t('7 days')],
+      ['0', t('All')],
     ]
 
     const segmentIdle = {
@@ -852,7 +928,7 @@ window.__ModuleLoader__.load({
       }, [load])
 
       if (error) return h('div', { style: s.page }, h('div', { style: s.error }, `stats: ${error}`))
-      if (!stats) return h('div', { style: s.page }, h('div', { style: s.hint }, 'Loading usage…'))
+      if (!stats) return h('div', { style: s.page }, h('div', { style: s.hint }, t('loading usage…')))
 
       const summary = stats.summary ?? []
       const recent = stats.recent ?? []
@@ -861,11 +937,11 @@ window.__ModuleLoader__.load({
 
       const windowLabel = (() => {
         const value = Number(hours)
-        if (!Number.isFinite(value) || value <= 0) return '全部时间'
-        if (value === 24) return '最近 1 天'
-        if (value === 168) return '最近 7 天'
-        if (value === 720) return '最近 30 天'
-        return `最近 ${value} 小时`
+        if (!Number.isFinite(value) || value <= 0) return t('all time')
+        if (value === 24) return t('last 1 day')
+        if (value === 168) return t('last 7 days')
+        if (value === 720) return t('last 30 days')
+        return `${t('last')} ${value} ${t('hours')}`
       })()
 
       const summaryRows = summary.map((row) => h('div', {
@@ -968,8 +1044,8 @@ window.__ModuleLoader__.load({
           },
         },
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
-            h('div', { style: s.title }, '模型使用统计'),
-            h('div', { style: s.sub }, `${windowLabel} · ${stats.records} 条记录 · 完成 ${totalDone} · 失败 ${totalFailed}`)),
+            h('div', { style: s.title }, t('Model usage')),
+            h('div', { style: s.sub }, `${windowLabel} · ${stats.records} ${t('records')} · ${t('done')} ${totalDone} · ${t('failed')} ${totalFailed}`)),
           h('div', { style: s.actions },
             ...SEGMENTS.map(([value, label]) => h('button', {
               key: value,
@@ -977,31 +1053,31 @@ window.__ModuleLoader__.load({
               disabled: busy,
               onClick: () => setHours(value),
             }, label)),
-            h('button', { style: s.btn, onClick: load, disabled: busy }, 'Refresh'))),
+            h('button', { style: s.btn, onClick: load, disabled: busy }, t('Refresh')))),
 
         h('div', { style: s.card },
-          h('div', { style: s.sectionTitle }, '每个档位'),
+          h('div', { style: s.sectionTitle }, t('Per tier')),
           summary.length === 0
-            ? h('div', { style: s.hint }, '还没有调用记录。派一次任务之后这里就会有。')
+            ? h('div', { style: s.hint }, t('per tier hint'))
             : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, ...summaryRows)),
 
         h('div', { style: s.card },
-          h('div', { style: s.sectionTitle }, '完成比例'),
+          h('div', { style: s.sectionTitle }, t('Completion')),
           summary.length === 0
             ? h('div', { style: s.hint }, '—')
             : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, ...barRows)),
 
         h('div', { style: s.card },
-          h('div', { style: s.sectionTitle }, '调用时间线'),
+          h('div', { style: s.sectionTitle }, t('Call timeline')),
           laneRows.length === 0
-            ? h('div', { style: s.hint }, '还没有已完成的调用。')
+            ? h('div', { style: s.hint }, t('timeline hint'))
             : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
               h('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: 10, color: color.muted } },
                 ...[0, 0.25, 0.5, 0.75, 1].map((fraction) => h('span', { key: fraction }, `${Math.round(axisMs * fraction)}ms`))),
               ...laneRows)),
 
         h('div', { style: s.card },
-          h('div', { style: s.sectionTitle }, '最近调用'),
+          h('div', { style: s.sectionTitle }, t('Recent calls')),
           recent.length === 0
             ? h('div', { style: s.hint }, '—')
             : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } }, ...recentRows(recent))))
@@ -1030,9 +1106,14 @@ window.__ModuleLoader__.load({
           name: 'conversation.view',
           id: 'supa-stats',
           order: 40,
-          label: '统计',
+          label: LOCALE === 'zh' ? '统计' : 'Stats',
         }, SupaStatsView))
       },
     }
   },
 })
+
+
+
+
+
