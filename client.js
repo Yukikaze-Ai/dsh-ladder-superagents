@@ -697,7 +697,7 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
-          id: 'supa',
+          id: 'ladder-superagents',
           order: 25,
           label: 'dsh-ladder-superagents',
         }, SupaSettings))
