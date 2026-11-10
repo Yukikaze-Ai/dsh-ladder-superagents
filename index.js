@@ -47,6 +47,12 @@ const DEFAULTS = {
   authority: 'workspace',
   /** Refuse `ask_user_question` with a "decide and record" directive. */
   denyBlockingQuestions: false,
+  /**
+   * Which shell calls are handed to a child instead of running in this turn:
+   * `blocking` = sleeps and polling loops only, `long` = also builds, installs,
+   * tests, clones and downloads, `all` = every shell call.
+   */
+  handOffShell: 'long',
   /** Wake a session whose turn ended `blocked`, up to maxBlockedNudges. */
   continueWhenBlocked: true,
   maxBlockedNudges: 3,
@@ -1148,7 +1154,7 @@ export function apply(ctx, config) {
   // A foreground sleep blocks the whole turn, so the shell call is handed to a
   // child that runs it and reports into the parent's queue. The parent is not
   // asked to wait, and not asked to retry by hand either.
-  const handOffCommand = (agent, command) => {
+  const handOffCommand = (agent, command, what = 'a blocking command') => {
     const subagents = ctx.get?.('subagents')
     if (!subagents || !agent) return false
     const brief = [
@@ -1172,11 +1178,19 @@ export function apply(ctx, config) {
       request,
       delivery: 'parent',
     }).catch(() => {})
+    try {
+      const summary = command.split('\n')[0].trim().slice(0, 120)
+      safeInject(agent, `起了一个子代理去跑（${what}）：\`${summary}\`。它跑完会把结果放进队列，到时候我再通知你。`)
+    } catch {
+      // the notification is best effort; the command still runs
+    }
     return true
   }
 
   const SLEEP_PATTERN = /\b(?:sleep\s+(\d+(?:\.\d+)?)|Start-Sleep\s+(?:-Seconds\s+)?(\d+(?:\.\d+)?)|timeout\s+\/t\s+(\d+))\b/gi
   const POLL_LOOP = /\b(?:while|until|for)\b[\s\S]{0,200}?\b(?:sleep|Start-Sleep)\b/i
+  // Commands that almost never finish inside a turn.
+  const LONG_COMMAND = /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:install|i|add|run|test|build|publish)|(?:pip|uv|poetry)\s+(?:install|add|sync)|(?:cargo|go|dotnet|msbuild|gradle|mvn|make|cmake)\b|pytest|tox|jest|vitest|playwright|cypress|docker|git\s+(?:clone|fetch|pull|push)|curl|wget)\b/i
   ctx.effect(() => ctx.tools.guard((execution) => {
     if (!execution || !isSupa(execution.agent)) return undefined
     if (execution.name !== 'pwsh' && execution.name !== 'bash') return undefined
@@ -1191,12 +1205,18 @@ export function apply(ctx, config) {
       total += Number(match[1] ?? match[2] ?? match[3] ?? 0) || 0
     }
     const looping = POLL_LOOP.test(command)
-    if (total < 30 && !looping) return undefined
 
-    const what = looping
-      ? 'polling in a loop'
-      : `sleeping about ${Math.round(total)}s`
-    if (handOffCommand(execution.agent, command)) {
+    let what = ''
+    if (total >= 30 || looping) {
+      what = looping ? 'polling in a loop' : `sleeping about ${Math.round(total)}s`
+    } else if (cfg.handOffShell === 'all') {
+      what = 'a shell command'
+    } else if (cfg.handOffShell !== 'blocking' && LONG_COMMAND.test(command)) {
+      what = 'a long-running command'
+    }
+    if (!what) return undefined
+
+    if (handOffCommand(execution.agent, command, what)) {
       return `Handed to a child instead of blocking this turn (${what}). It runs the command and reports the output into \`supa_inbox\`; do not wait for it, keep working.`
     }
     return `This command is ${what} in the foreground, which blocks the whole turn. `
