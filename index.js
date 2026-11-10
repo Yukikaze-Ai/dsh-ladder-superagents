@@ -1161,7 +1161,7 @@ export function apply(ctx, config) {
   const handedOff = new Map()
   const HAND_OFF_DEDUPE_MS = 60_000
 
-  const handOffCommand = (agent, command, what = 'a blocking command') => {
+  const handOffCommand = (agent, command, what = 'a blocking command', workdir = '') => {
     const subagents = ctx.get?.('subagents')
     if (!subagents || !agent) return 'unavailable'
 
@@ -1181,9 +1181,10 @@ export function apply(ctx, config) {
       '## Assignment',
       'Your parent tried to run this in the foreground and it would block its turn, so it was handed to you.',
       '',
-      'Run exactly this command once, in the workspace, and report the result:',
+      'Run exactly this command once and report the result:',
       '',
       '```',
+      ...(workdir ? [`cd '${String(workdir).replace(/'/g, "''")}'`] : []),
       command.slice(0, 4000),
       '```',
       '',
@@ -1259,7 +1260,7 @@ export function apply(ctx, config) {
     }
     if (!what) return undefined
 
-    const handed = handOffCommand(execution.agent, command, what)
+    const handed = handOffCommand(execution.agent, command, what, String(args.workdir ?? ''))
     if (handed === 'spawned') {
       return `Handed to a child instead of blocking this turn (${what}). It runs the command and reports the output into \`supa_inbox\`; do not wait for it, keep working.`
     }
