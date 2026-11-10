@@ -1,5 +1,5 @@
 /**
- * @local/dsh-supa — a SupA (super agent) layer for DeepSeek Harness.
+ * dsh-supa — a SupA (super agent) layer for DeepSeek Harness.
  *
  * Concept: https://github.com/deepseek-ai/dsh-superagent-prototype
  *
@@ -2140,3 +2140,4 @@ export function apply(ctx, config) {
 
   log(`active (mode=${cfg.mode}, ledger=${cfg.ledgerDir}, autoApprove=${cfg.autoApprove})`)
 }
+

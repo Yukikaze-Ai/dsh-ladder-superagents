@@ -245,7 +245,7 @@ literal: they consume each model's tokens/usage.
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 ## Risks you should know
 
