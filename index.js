@@ -1697,12 +1697,14 @@ export function apply(ctx, config) {
       return { tier: null, degraded: false, usable: 0, total: tiers.length, chain: [], desired }
     }
 
-    // Walk from the requested tier down to weaker slots; a hole (T1 empty)
-    // simply skips to the next defined slot. Nothing weaker left means the
-    // weakest available tier still gets the task.
-    const atOrWeaker = healthy.filter((tier) => tier.slot >= desired)
-    const pick = atOrWeaker[0] ?? healthy[healthy.length - 1]
-    const chain = atOrWeaker.length > 0 ? atOrWeaker : healthy
+    // A tier at slot s covers every difficulty up to its ceiling (11 - s), so
+    // the tiers that can do this task are the ones with slot <= desired. Pick
+    // the weakest of them; a hole (T3 empty) is covered by the stronger tier
+    // above it, not by a weaker one below.
+    const covers = healthy.filter((tier) => tier.slot <= desired)
+    const pick = covers.length > 0 ? covers[covers.length - 1] : healthy[0]
+    // Degrading means walking to weaker slots from the pick.
+    const chain = healthy.filter((tier) => tier.slot >= pick.slot)
     return { tier: pick, degraded: pick.slot !== desired, usable: healthy.length, total: tiers.length, chain, desired }
   }
 
@@ -1910,7 +1912,7 @@ export function apply(ctx, config) {
       const fallback = picked.chain.slice(startIndex + 1).map((entry) => `T${entry.slot} ${entry.label}`)
       return `difficulty ${difficulty} → T${picked.tier.slot} ${picked.tier.label} (${tierRoute(picked.tier)})`
         + (picked.degraded
-          ? `\nT${picked.desired} is empty, disabled or failing; walked down to T${picked.tier.slot}.`
+          ? `\nT${picked.desired} is empty, disabled or failing; used the nearest tier that still covers it, T${picked.tier.slot}.`
           : '')
         + (fallback.length ? `\nFallback chain on failure: ${fallback.join(' → ')}` : '\nNo weaker tier to fall back to.')
         + `\n${picked.usable}/${picked.total} tiers usable.`
