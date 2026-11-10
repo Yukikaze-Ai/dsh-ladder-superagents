@@ -53,7 +53,7 @@ Set on the `supa` row in the bundle's `cordis.patch.yml`:
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `enabled` | `true` | Master switch |
-| `mode` | `all` | `all` = every session; `root` = only sessions without a parent; `preset` = only listed `presets` |
+| `mode` | `session` | `session` = opt-in per session via `supa_session enable`; `all` = every session; `root` = only sessions without a parent; `preset` = only listed `presets` |
 | `presets` | `[]` | Preset ids for `mode: preset` |
 | `ledgerDir` | `.dsh-supa` | Ledger directory, relative to the session working directory |
 | `autoApprove` | `true` | Decide approvals instead of asking a human |
