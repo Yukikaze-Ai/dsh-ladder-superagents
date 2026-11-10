@@ -118,6 +118,7 @@ const CHILD_CHARTER = [
   '- The context above is what your parent chose to give you. Nothing else from the parent conversation is visible to you.',
   '- If you need more, call `supa_context_request` with the exact question and why. Your parent may answer in a later message; do not sit idle waiting for it — keep working on what you can.',
   '- Do not ask a human. Decide, record assumptions with `supa_context`, and finish.',
+  '- You are a **worker**, not a SupA: you cannot spawn further agents, drain a queue, or change the model ladder. Those belong to the session that started you. Do the work yourself, and report what you cannot do.',
   '- You have no peers. Do not try to reach a sibling session; your only channel upward is `supa_report`, which enqueues into your parent\'s inbound queue without interrupting it. Use it for progress and for the final result; do not expect an immediate answer.',
   '- **Your last act must be a `supa_report` carrying the result** — what you did, what you found, what your parent should do next. A child that ends without reporting leaves its parent holding a bare stop reason.',
   '- End with a compact result: what you did, what you found, and what your parent should do next.',
@@ -1270,6 +1271,19 @@ export function apply(ctx, config) {
     }
     return `This command is ${what} in the foreground, which blocks the whole turn. `
       + 'Run it with `run_in_background: true`, or hand it to a child with `supa_spawn`.'
+  }))
+
+  // A child is a worker. Orchestration belongs to the session that started it:
+  // a worker may report up and write findings, nothing else.
+  ctx.effect(() => ctx.tools.guard((execution) => {
+    const name = typeof execution?.name === 'string' ? execution.name : ''
+    if (!name.startsWith('supa_')) return undefined
+    const agent = execution.agent
+    if (!agent?.session?.header?.parentSession) return undefined
+    const workerTools = new Set(['supa_report', 'supa_context', 'supa_context_request', 'supa_status', 'supa_session'])
+    if (workerTools.has(name)) return undefined
+    return `You are a worker, not a SupA: \`${name}\` belongs to the session that started you. `
+      + 'Do the work yourself, or report up with `supa_report` what you cannot do.'
   }))
 
   // ------------------------------------------------------------- sessions
