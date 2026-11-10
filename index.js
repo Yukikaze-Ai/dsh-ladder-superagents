@@ -102,7 +102,7 @@ const CHARTER = [
   '',
   'Route work by difficulty. Rate a task 1-10 (1 = a 4B model can do it, 10 = contradictory or missing information needing judgment) and pass `difficulty` to `supa_spawn`: the ladder picks the weakest tier that still covers the score, and degrades to the strongest available tier when nothing covers it. `supa_models list` shows the ladder and the routes the runtime actually advertises.',
   'Delegate execution, not only research. A command sequence, a build, a test run, or a multi-file change belongs in a child: spawn it, keep working on something else, then drain `supa_inbox` and pick what matters. Keep in your own hands only the quick single step whose result you need in the same breath, and the decisions about what to do next.',
-  'Work style: act, do not ask. If a tool fails, change approach rather than waiting. End a turn only when the work is done, when you are waiting on a child that will wake you, or when the remaining choice is irreversible.',
+  'Work style: act, do not ask. Never wait inside a turn: a command that sleeps, polls, or builds for more than a few seconds belongs in the background (`run_in_background`) or in a child; come back for its result instead of sitting on it. If a tool fails, change approach rather than waiting. End a turn only when the work is done, when you are waiting on a child that will wake you, or when the remaining choice is irreversible.',
 ].join('\n')
 
 const CHILD_CHARTER = [
@@ -1143,6 +1143,24 @@ export function apply(ctx, config) {
       return QUESTION_DENIAL
     }))
   }
+
+  // A foreground sleep blocks the whole turn: nothing else happens until it
+  // returns. Make the model take the background route instead.
+  const SLEEP_PATTERN = /\b(?:sleep\s+(\d{2,})|Start-Sleep\s+(?:-Seconds\s+)?(\d{2,})|timeout\s+\/t\s+(\d{2,}))\b/i
+  ctx.effect(() => ctx.tools.guard((execution) => {
+    if (!execution || !isSupa(execution.agent)) return undefined
+    if (execution.name !== 'pwsh' && execution.name !== 'bash') return undefined
+    const args = execution.arguments
+    if (!args || typeof args !== 'object') return undefined
+    if (args.run_in_background === true) return undefined
+    const command = String(args.command ?? '')
+    const match = command ? SLEEP_PATTERN.exec(command) : null
+    if (!match) return undefined
+    const seconds = Number(match[1] ?? match[2] ?? match[3] ?? 0)
+    if (!Number.isFinite(seconds) || seconds < 30) return undefined
+    return `This command sleeps ${seconds}s in the foreground, which blocks the whole turn. `
+      + 'Re-run it with `run_in_background: true`, or hand it to a child with `supa_spawn` and keep working; the result lands in `supa_inbox`.'
+  }))
 
   // ------------------------------------------------------------- sessions
   //
