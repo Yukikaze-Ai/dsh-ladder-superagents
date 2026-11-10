@@ -367,6 +367,7 @@ async function scanCodexModels(cfg, cwd) {
     // first scan
   }
 
+  await mkdir(ledgerDirOf(cwd, cfg), { recursive: true })
   await writeFile(cacheFile, `${JSON.stringify({ at: Date.now(), models, probes }, null, 2)}\n`, 'utf8')
   return { models, probes, cacheFile }
 }
@@ -1265,6 +1266,7 @@ export function apply(ctx, config) {
         id: String(workspace.id),
         title: workspace.title,
         path: workspace.path,
+        updatedAt: workspace.updatedAt ?? '',
       }))
     } catch {
       return []
@@ -1274,7 +1276,12 @@ export function apply(ctx, config) {
   const apiCwd = (requested) => {
     if (typeof requested === 'string' && requested) return requested
     const workspaces = workspaceList()
-    if (workspaces.length > 0) return workspaces[0].path
+    if (workspaces.length > 0) {
+      // The registry is in durable display order, not recency order: pick the
+      // workspace that moved last, which is the one the user is working in.
+      const [latest] = [...workspaces].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+      return latest.path
+    }
     try {
       const dir = ctx.get?.('workingDirectory')?.defaultDirectory
       if (typeof dir === 'string' && dir) return dir

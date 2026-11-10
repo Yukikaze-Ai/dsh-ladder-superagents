@@ -193,7 +193,11 @@ window.__ModuleLoader__.load({
       }, [])
 
       useEffect(() => {
-        load()
+        try {
+          load(localStorage.getItem('dsh-supa.cwd') || undefined)
+        } catch {
+          load()
+        }
       }, [load])
 
       const act = useCallback(async (body) => {
@@ -233,7 +237,14 @@ window.__ModuleLoader__.load({
           ? h('select', {
             style: { ...styles.input, maxWidth: 420 },
             value: cwd,
-            onChange: (event) => load(event.target.value),
+            onChange: (event) => {
+              try {
+                localStorage.setItem('dsh-supa.cwd', event.target.value)
+              } catch {
+                // storage unavailable: the choice still applies to this render
+              }
+              load(event.target.value)
+            },
           }, ...state.workspaces.map((workspace) => h('option', { key: workspace.id, value: workspace.path }, `${workspace.title} — ${workspace.path}`)))
           : null,
         tiers.length === 0
