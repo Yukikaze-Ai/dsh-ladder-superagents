@@ -805,6 +805,30 @@ window.__ModuleLoader__.load({
       'SupA')
     }
 
+    const SEGMENTS = [
+      ['1', '1 小时'],
+      ['24', '1 天'],
+      ['168', '7 天'],
+      ['0', '全部'],
+    ]
+
+    const segmentIdle = {
+      padding: '4px 10px',
+      borderRadius: 14,
+      border: 'none',
+      background: 'transparent',
+      color: 'var(--dsw-alias-label-secondary, #6b7280)',
+      fontSize: 12,
+      cursor: 'pointer',
+    }
+
+    const segmentActive = {
+      ...segmentIdle,
+      background: 'var(--dsw-alias-bg-layer-2, rgba(127,127,127,.16))',
+      color: 'var(--dsw-alias-label-primary, #1f2328)',
+      fontWeight: 500,
+    }
+
     function SupaStatsView() {
       const [stats, setStats] = useState(null)
       const [error, setError] = useState('')
@@ -938,17 +962,12 @@ window.__ModuleLoader__.load({
             h('div', { style: s.title }, '模型使用统计'),
             h('div', { style: s.sub }, `${windowLabel} · ${stats.records} 条记录 · 完成 ${totalDone} · 失败 ${totalFailed}`)),
           h('div', { style: s.actions },
-            h('select', {
-              style: s.input,
-              value: hours,
+            ...SEGMENTS.map(([value, label]) => h('button', {
+              key: value,
+              style: hours === value ? segmentActive : segmentIdle,
               disabled: busy,
-              onChange: (event) => setHours(event.target.value),
-            },
-            h('option', { value: '1' }, '最近 1 小时'),
-            h('option', { value: '6' }, '最近 6 小时'),
-            h('option', { value: '24' }, '最近 24 小时'),
-            h('option', { value: '168' }, '最近 7 天'),
-            h('option', { value: '0' }, '全部')),
+              onClick: () => setHours(value),
+            }, label)),
             h('button', { style: s.btn, onClick: load, disabled: busy }, 'Refresh'))),
 
         h('div', { style: s.card },
