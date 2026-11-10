@@ -21,7 +21,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -264,17 +264,36 @@ function failureActive(entry, cfg) {
   return Boolean(entry && Number(entry.at) && Date.now() - Number(entry.at) < cfg.failureCooldownMs)
 }
 
+/**
+ * Failure marks are shared state: every writer queues behind the previous one,
+ * so two children failing at the same moment cannot overwrite each other's mark.
+ */
+let failureWriteChain = Promise.resolve()
+
+async function writeFailures(cwd, cfg, all) {
+  const text = `${JSON.stringify(all, null, 2)}\n`
+  failureWriteChain = failureWriteChain.then(
+    () => writeTextAtomic(failuresFileOf(cwd, cfg), text),
+    () => writeTextAtomic(failuresFileOf(cwd, cfg), text),
+  )
+  return failureWriteChain
+}
+
 async function recordFailure(cwd, cfg, keys, error, tier = null) {
   const list = (Array.isArray(keys) ? keys : [keys]).filter(Boolean)
   if (list.length === 0) return
-  const file = failuresFileOf(cwd, cfg)
-  const all = readFailures(cwd, cfg)
-  const at = Date.now()
-  for (const key of list) {
-    all[key] = { at, error: String(error ?? '').slice(0, 300), ...(tier ? { tier } : {}) }
+  // Read inside the queue, not before it: otherwise two failures read the same
+  // snapshot and the later write drops the earlier mark.
+  const run = async () => {
+    const all = readFailures(cwd, cfg)
+    const at = Date.now()
+    for (const key of list) {
+      all[key] = { at, error: String(error ?? '').slice(0, 300), ...(tier ? { tier } : {}) }
+    }
+    await writeTextAtomic(failuresFileOf(cwd, cfg), `${JSON.stringify(all, null, 2)}\n`)
   }
-  await mkdir(stateDirOf(), { recursive: true })
-  await writeFile(file, `${JSON.stringify(all, null, 2)}\n`, 'utf8')
+  failureWriteChain = failureWriteChain.then(run, run)
+  return failureWriteChain
 }
 
 /**
@@ -327,25 +346,27 @@ async function ensureUsableRoute(cwd, cfg) {
 }
 
 /** Probe one CLI tier with a single real call, reusing its driver. */
-async function probeCliTier(cfg, tier) {
+async function probeCliTier(cfg, tier, cwd) {
   const driver = CLI_DRIVERS[driverOf(tier)]
   if (!driver) return { ok: false, error: `unknown CLI driver "${driverOf(tier)}"` }
   const command = resolveOnPath(tier.command || driver.bin(cfg) || driverOf(tier))
   if (!command) return { ok: false, error: `${driverOf(tier)} CLI not found` }
+  const workdir = cwd || process.cwd()
   const outFile = join(tmpdir(), `supa-probe-${randomUUID().slice(0, 8)}.txt`)
   const args = driver.args({
     cfg,
     model: tier.model,
     effort: tier.reasoningEffort,
-    cwd: process.cwd(),
+    cwd: workdir,
     outFile,
     prompt: 'Reply with the single word: ok',
     authority: 'workspace',
   })
   const shell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)
   try {
-    const run = await runCodexCli(command, shell ? args.map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg)) : args, {
+    const run = await runCodexCli(command, shell ? args.map(quoteForShell) : args, {
       input: driver.prompt === 'stdin' ? 'Reply with the single word: ok' : '',
+      cwd: workdir,
       timeoutMs: Math.min(cfg.cliTimeoutMs, 120000),
       shell,
     })
@@ -371,7 +392,7 @@ async function forgetFailure(cwd, cfg, tier) {
   if (!keys.some((key) => key in all)) return
   for (const key of keys) delete all[key]
   await mkdir(stateDirOf(), { recursive: true })
-  await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(all, null, 2)}\n`, 'utf8')
+  await writeFailures(cwd, cfg, all)
 }
 
 /**
@@ -462,32 +483,19 @@ function normalizeTier(raw, index) {
     reasoningEffort: typeof tier.reasoningEffort === 'string' ? tier.reasoningEffort : '',
     // The slot is the tier: T1 is the strongest and covers a 10-point task.
     slot,
-    ceiling: Math.min(10, Math.max(1, 11 - slot)),
+    ceiling: ceilingOf(slot),
     enabled: tier.enabled !== false,
   }
 }
 
 async function readLadder(file) {
+  let raw
   try {
-    const parsed = JSON.parse(await readFile(file, 'utf8'))
-    const raw = Array.isArray(parsed?.tiers) ? parsed.tiers : []
-    const seen = new Set()
-    const tiers = raw.map((entry, index) => {
-      const tier = normalizeTier(entry, index)
-      if (seen.has(tier.slot)) {
-        // Two entries claiming one slot: move the later one to the first free.
-        let free = 1
-        while (seen.has(free) && free < 10) free += 1
-        tier.slot = free
-        tier.ceiling = Math.min(10, Math.max(1, 11 - free))
-      }
-      seen.add(tier.slot)
-      return tier
-    }).sort((a, b) => a.slot - b.slot)
-    return { version: 1, tiers }
-  } catch {
-    // No ladder yet: seed the built-in default so a fresh profile has a
-    // working pool instead of "everything inherits the parent route".
+    raw = await readFile(file, 'utf8')
+  } catch (error) {
+    // Only a missing file means "nothing configured yet". Any other read error
+    // must not be turned into a fresh ladder.
+    if (error?.code !== 'ENOENT') throw error
     const seeded = defaultLadder()
     try {
       await writeLadder(file, seeded)
@@ -496,11 +504,50 @@ async function readLadder(file) {
     }
     return seeded
   }
+
+  try {
+    const parsed = JSON.parse(raw)
+    const rawTiers = Array.isArray(parsed?.tiers) ? parsed.tiers : []
+    const seen = new Set()
+    const tiers = rawTiers.map((entry, index) => {
+      const tier = normalizeTier(entry, index)
+      if (seen.has(tier.slot)) {
+        // Two entries claiming one slot: move the later one to the first free.
+        let free = 1
+        while (seen.has(free) && free < 10) free += 1
+        tier.slot = free
+        tier.ceiling = ceilingOf(free)
+      }
+      seen.add(tier.slot)
+      return tier
+    }).sort((a, b) => a.slot - b.slot)
+    return { version: 1, tiers }
+  } catch {
+    // A file we cannot parse is data, not an empty ladder: keep a copy before
+    // seeding so nothing is lost and the user can repair it by hand.
+    const quarantine = `${file}.corrupt-${Date.now()}`
+    await writeFile(quarantine, raw, 'utf8').catch(() => {})
+    const seeded = defaultLadder()
+    await writeLadder(file, seeded).catch(() => {})
+    return seeded
+  }
+}
+
+/** One rule for "how strong is this slot", used everywhere. */
+function ceilingOf(slot) {
+  return Math.min(10, Math.max(1, 11 - slot))
 }
 
 async function writeLadder(file, ladder) {
+  await writeTextAtomic(file, `${JSON.stringify(ladder, null, 2)}\n`)
+}
+
+/** Write through a temporary file so a crash cannot leave half a JSON file. */
+async function writeTextAtomic(file, text) {
+  const tmp = `${file}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
   await mkdir(join(file, '..'), { recursive: true })
-  await writeFile(file, `${JSON.stringify(ladder, null, 2)}\n`, 'utf8')
+  await writeFile(tmp, text, 'utf8')
+  await rename(tmp, file)
 }
 
 function tierRoute(tier) {
@@ -518,7 +565,7 @@ function tierRoute(tier) {
  */
 function renumber(tiers) {
   for (const tier of tiers) {
-    tier.ceiling = Math.min(10, Math.max(1, 11 - tier.slot))
+    tier.ceiling = ceilingOf(tier.slot)
   }
   return tiers
 }
@@ -624,8 +671,22 @@ async function pinCodexTargets(cfg, cwd, targets, options = {}) {
  * Resolve an executable the way a shell would: an explicit path is checked
  * directly, a bare name is looked up on PATH with the platform's extensions.
  */
-function resolveOnPath(name) {
-  if (!name) return null
+/**
+ * Quote one argument for a CLI started through a shell. Windows .cmd/.bat
+ * wrappers need this: an unquoted `&` in a prompt ends the command and starts
+ * another one.
+ */
+function quoteForShell(arg) {
+  const value = String(arg)
+  if (process.platform !== 'win32') return `'${value.replace(/'/g, `'\\''`)}'`
+  if (value === '') return '""'
+  if (!/[\s"&|<>^()]/.test(value)) return value
+  // shortcut: cmd still expands %NAME% inside quotes; a prompt that names an
+  // environment variable in percent signs is rare enough to leave alone.
+  return `"${value.replace(/"/g, '\\"')}"`
+}
+
+function resolveOnPath(name) {  if (!name) return null
   if (name.includes('/') || name.includes('\\') || /^[A-Za-z]:/.test(name)) return existsSync(name) ? name : null
   const extensions = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : ['']
   const separator = process.platform === 'win32' ? ';' : ':'
@@ -1443,7 +1504,7 @@ export function apply(ctx, config) {
           ? Object.fromEntries(Object.entries(all).filter(([key]) => !drop.has(key)))
           : {}
         await mkdir(stateDirOf(), { recursive: true })
-        await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(next, null, 2)}\n`, 'utf8')
+        await writeFailures(cwd, cfg, next)
         if (tier && tier.enabled === false) {
           tier.enabled = true
           await writeLadder(modelsFileOf(), ladder)
@@ -1742,7 +1803,7 @@ export function apply(ctx, config) {
       const tier = ladder.tiers.find((entry) => entry.id === String(body.id))
       if (!tier) throw new Error(`no tier ${body.id}`)
       const verdict = isCliTier(tier)
-        ? await probeCliTier(cfg, tier)
+        ? await probeCliTier(cfg, tier, cwd)
         : (await tierAvailable(tier))
           ? { ok: true }
           : { ok: false, error: 'the llm service does not resolve this route' }
@@ -1757,7 +1818,7 @@ export function apply(ctx, config) {
         tier.enabled = false
       }
       await mkdir(stateDirOf(), { recursive: true })
-      await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(all, null, 2)}\n`, 'utf8')
+      await writeFailures(cwd, cfg, all)
       await writeLadder(modelsFileOf(), ladder)
       return { ...(await settingsState(cwd)), retry: { ok: Boolean(verdict.ok), error: verdict.error ?? '' } }
     }
@@ -1767,7 +1828,7 @@ export function apply(ctx, config) {
       if (typeof body.key === 'string' && body.key) {
         delete all[body.key]
         await mkdir(stateDirOf(), { recursive: true })
-        await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(all, null, 2)}\n`, 'utf8')
+        await writeFailures(cwd, cfg, all)
         return settingsState(cwd)
       }
       const ladder = await readLadder(modelsFileOf())
@@ -1781,7 +1842,7 @@ export function apply(ctx, config) {
         ? Object.fromEntries(Object.entries(all).filter(([key]) => !drop.has(key)))
         : {}
       await mkdir(stateDirOf(), { recursive: true })
-      await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(next, null, 2)}\n`, 'utf8')
+      await writeFailures(cwd, cfg, next)
       if (tier && tier.enabled === false) {
         tier.enabled = true
         await writeLadder(modelsFileOf(), ladder)
@@ -2192,6 +2253,7 @@ export function apply(ctx, config) {
         if (args.route) {
           tier = ladder.tiers.find((entry) => entry.id === args.route) ?? null
           if (!tier) throw new Error(`no ladder tier with id ${args.route}; run supa_models list`)
+          if (tier.enabled === false) throw new Error(`tier ${args.route} ("${tier.label}") is switched off; enable it first or route by difficulty`)
           routeChain = [tier]
         } else {
           const picked = await resolveRoute(ladder, Math.min(10, Math.max(1, Number(args.difficulty) || 5)), cwd)
@@ -2381,7 +2443,7 @@ export function apply(ctx, config) {
 
         // A Windows npm shim is a .cmd, which spawn cannot execute directly.
         const shell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)
-        const child = spawn(command, shell ? args.map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg)) : args, {
+        const child = spawn(command, shell ? args.map(quoteForShell) : args, {
           cwd,
           windowsHide: true,
           shell,

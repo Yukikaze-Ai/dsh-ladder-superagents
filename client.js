@@ -108,7 +108,6 @@ window.__ModuleLoader__.load({
         color: color.muted,
       },
       hint: { fontSize: 12, color: color.muted, lineHeight: '18px' },
-      warn: { fontSize: 12, color: color.warn, lineHeight: '18px' },
       error: { fontSize: 12, color: color.bad, lineHeight: '18px' },
     }
 
