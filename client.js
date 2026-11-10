@@ -124,6 +124,12 @@ window.__ModuleLoader__.load({
     }
 
     function TierCard({ tier, index, count, onAction, onReorder, dragIndex, setDragIndex }) {
+      const [confirming, setConfirming] = useState(false)
+      useEffect(() => {
+        if (!confirming) return undefined
+        const timer = setTimeout(() => setConfirming(false), 3000)
+        return () => clearTimeout(timer)
+      }, [confirming])
       const toggle = () => onAction({ action: 'enable', id: tier.id, enabled: !tier.enabled })
       const move = (to) => onAction({ action: 'move', id: tier.id, to })
       return h('div', {
@@ -161,9 +167,20 @@ window.__ModuleLoader__.load({
         h('button', { style: s.btnIcon, onClick: () => move(index + 1), disabled: index === count - 1, title: 'Move down' }, '↓'),
         h('button', { style: s.btn, onClick: toggle, title: tier.enabled ? 'Disable this tier' : 'Enable this tier' }, tier.enabled ? 'Off' : 'On'),
         tier.failure
-          ? h('button', { style: s.btn, onClick: () => onAction({ action: 'clear', id: tier.id }), title: 'Clear the failure mark' }, 'Clear')
+          ? h('button', {
+            style: s.btn,
+            onClick: () => onAction({ action: 'clear', id: tier.id }),
+            title: 'Clear the failure and put this tier back in rotation',
+          }, 'Restore')
           : null,
-        h('button', { style: s.btnIcon, onClick: () => onAction({ action: 'remove', id: tier.id }), title: 'Remove this tier' }, '✕')))
+        h('button', {
+          style: confirming ? { ...s.btn, color: color.bad } : s.btnIcon,
+          onClick: () => {
+            if (confirming) onAction({ action: 'remove', id: tier.id })
+            else setConfirming(true)
+          },
+          title: confirming ? 'Click again to remove this tier' : 'Remove this tier',
+        }, confirming ? 'Sure?' : '✕')))
     }
 
     function Catalog({ catalog, llm, busy, onScan, onPin }) {

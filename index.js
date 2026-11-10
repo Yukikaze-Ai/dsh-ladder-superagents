@@ -271,6 +271,20 @@ async function recordFailure(cwd, cfg, key, error) {
 }
 
 /**
+ * Take a failed tier out of rotation. The row keeps its configuration so a
+ * credential fix is one click away; deleting it would lose the model over a
+ * transient rate limit.
+ */
+async function disableTier(cwd, cfg, tierId) {
+  if (!tierId) return
+  const ladder = await readLadder(modelsFileOf())
+  const tier = ladder.tiers.find((entry) => entry.id === tierId)
+  if (!tier || tier.enabled === false) return
+  tier.enabled = false
+  await writeLadder(modelsFileOf(), ladder)
+}
+
+/**
  * Locate the Codex CLI. An external tier runs `codex exec` as a child process
  * instead of a Harness agent session, so its context is the pack on stdin and
  * its result is the CLI's last message.
@@ -1192,7 +1206,15 @@ export function apply(ctx, config) {
           : {}
         await mkdir(stateDirOf(), { recursive: true })
         await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(next, null, 2)}\n`, 'utf8')
-        return args.id ? `cleared the failure mark on ${args.id}` : 'cleared every tier failure mark'
+        if (args.id) {
+          const ladder = await readLadder(modelsFileOf())
+          const tier = ladder.tiers.find((entry) => entry.id === args.id)
+          if (tier && tier.enabled === false) {
+            tier.enabled = true
+            await writeLadder(modelsFileOf(), ladder)
+          }
+        }
+        return args.id ? `cleared ${args.id} and put it back in rotation` : 'cleared every tier failure mark'
       }
 
       if (args.action === 'scan') {
@@ -1432,6 +1454,14 @@ export function apply(ctx, config) {
         : {}
       await mkdir(stateDirOf(), { recursive: true })
       await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(next, null, 2)}\n`, 'utf8')
+      if (body.id) {
+        const ladder = await readLadder(modelsFileOf())
+        const tier = ladder.tiers.find((entry) => entry.id === String(body.id))
+        if (tier && tier.enabled === false) {
+          tier.enabled = true
+          await writeLadder(modelsFileOf(), ladder)
+        }
+      }
       return settingsState(cwd)
     }
 
@@ -1950,9 +1980,12 @@ export function apply(ctx, config) {
       }
 
       const onFailure = (tier, attempt, stop) => {
-        // Mark the tier whatever happens next: the failure is a fact about the
-        // model, not about this particular retry decision.
-        if (tier?.id) recordFailure(cwd, cfg, tier.id, stop).catch(() => {})
+        // Mark the tier and take it out of rotation whatever happens next: the
+        // failure is a fact about the model, not about this retry decision.
+        if (tier?.id) {
+          recordFailure(cwd, cfg, tier.id, stop).catch(() => {})
+          disableTier(cwd, cfg, tier.id).catch(() => {})
+        }
         if (!cfg.retryOnFailure) return
         const index = tier ? routeChain.findIndex((entry) => entry.id === tier.id) : -1
         const next = index >= 0 ? routeChain[index + 1] : undefined
