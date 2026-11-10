@@ -745,9 +745,14 @@ const CLI_DRIVERS = {
     label: 'Claude Code',
     bin: (cfg) => cfg.claudeCommand || 'claude',
     prompt: 'stdin',
-    args: ({ model, authority }) => [
+    args: ({ model, effort, authority }) => [
       '-p', '--output-format', 'text',
       ...(model ? ['--model', model] : []),
+      // Claude Code names its levels low|medium|high|xhigh|max; a tier's own
+      // effort passes through only when it is one of those.
+      ...(['low', 'medium', 'high', 'xhigh', 'max'].includes(String(effort ?? ''))
+        ? ['--effort', effort]
+        : []),
       // A SupA never waits for a human: either skip the checks (full) or make
       // sure a permission prompt resolves to "no" instead of hanging stdout.
       ...(authority === 'full'
