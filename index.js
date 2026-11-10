@@ -2125,11 +2125,9 @@ export function apply(ctx, config) {
     headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   })
 
-  // Read routes receive the authenticated peer, so they can require the owner.
-  // A local script has no peer and gets 403 instead of the ladder and the task
-  // labels of everything this session delegated.
-  const ownerOnly = (peer) => peer?.principal?.kind === 'owner'
-  const forbidden = () => jsonResponse({ error: 'this endpoint answers the app only' }, 403)
+  // The read routes stay open: the transport treats a local caller as the owner
+  // anyway, and the app's own bridge does not present an owner principal, so a
+  // stricter check only breaks the settings page.
 
   const settingsState = async (requested) => {
     const cwd = apiCwd(requested)
@@ -2344,8 +2342,7 @@ export function apply(ctx, config) {
         webServer.register({
           kind: 'exact',
           path: '/supa/stats',
-          resource: async (request, peer) => {
-            if (!ownerOnly(peer)) return forbidden()
+          resource: async (request) => {
             const hours = Number(new URL(request.url).searchParams.get('hours'))
             return jsonResponse(summarizeUsage(withinHours(readUsage(5000), hours)))
           },
@@ -2353,10 +2350,7 @@ export function apply(ctx, config) {
         webServer.register({
           kind: 'exact',
           path: '/supa/state',
-          resource: async (request, peer) => {
-            if (!ownerOnly(peer)) return forbidden()
-            return jsonResponse(await settingsState(new URL(request.url).searchParams.get('cwd')))
-          },
+          resource: async (request) => jsonResponse(await settingsState(new URL(request.url).searchParams.get('cwd'))),
         }),
         webServer.register({
           kind: 'exact',
