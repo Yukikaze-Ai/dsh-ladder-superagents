@@ -523,6 +523,14 @@ function readUsage(limit = 2000) {
   }
 }
 
+/** Keep only records from the last `hours`; a non-positive value means all. */
+export function withinHours(records, hours) {
+  const span = Number(hours)
+  if (!Number.isFinite(span) || span <= 0) return records
+  const cutoff = Date.now() - span * 3600_000
+  return records.filter((record) => Number(record.at) >= cutoff)
+}
+
 /** Pull the last turn's token usage out of codex's JSONL event stream. */
 function tokensFromJsonl(stdout) {
   let usage = null
@@ -1523,6 +1531,7 @@ export function apply(ctx, config) {
       properties: {
         action: { type: 'string', enum: ['summary', 'recent'], description: '`summary` aggregates per tier; `recent` lists the latest calls.' },
         limit: { type: 'number', description: 'For `recent`: how many calls, 1-100 (default 20).' },
+        hours: { type: 'number', description: 'Only count calls from the last N hours; 0 or omitted means everything.' },
       },
       additionalProperties: false,
     },
@@ -1532,8 +1541,8 @@ export function apply(ctx, config) {
     },
     isConcurrencySafe: () => true,
     async execute(args) {
-      const records = readUsage(5000)
-      if (records.length === 0) return `no usage recorded yet (${usageFileOf()})`
+      const records = withinHours(readUsage(5000), Number(args.hours) || 0)
+      if (records.length === 0) return `no usage recorded in that window (${usageFileOf()})`
       const { summary } = summarizeUsage(records)
 
       if (args.action === 'recent') {
@@ -2303,7 +2312,10 @@ export function apply(ctx, config) {
         webServer.register({
           kind: 'exact',
           path: '/supa/stats',
-          resource: async () => jsonResponse(summarizeUsage(readUsage(5000))),
+          resource: async (request) => {
+            const hours = Number(new URL(request.url).searchParams.get('hours'))
+            return jsonResponse(summarizeUsage(withinHours(readUsage(5000), hours)))
+          },
         }),
         webServer.register({
           kind: 'exact',

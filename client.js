@@ -809,18 +809,19 @@ window.__ModuleLoader__.load({
       const [stats, setStats] = useState(null)
       const [error, setError] = useState('')
       const [busy, setBusy] = useState(false)
+      const [hours, setHours] = useState('24')
 
       const load = useCallback(async () => {
         setBusy(true)
         try {
-          setStats(await request('/supa/stats'))
+          setStats(await request(`/supa/stats?hours=${hours}`))
           setError('')
         } catch (failure) {
           setError(String(failure?.message ?? failure))
         } finally {
           setBusy(false)
         }
-      }, [])
+      }, [hours])
 
       useEffect(() => {
         load()
@@ -904,6 +905,8 @@ window.__ModuleLoader__.load({
             background: 'var(--dsw-alias-bg-layer-2, rgba(127,127,127,.08))',
             borderRadius: 3,
             overflow: 'hidden',
+            // DevTools-style gridlines at quarter marks of the fixed axis.
+            backgroundImage: 'repeating-linear-gradient(to right, rgba(127,127,127,.22) 0 1px, transparent 1px 25%)',
           },
         },
         h('div', {
@@ -925,7 +928,19 @@ window.__ModuleLoader__.load({
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
             h('div', { style: s.title }, '模型使用统计'),
             h('div', { style: s.sub }, `${stats.records} 条记录 · 完成 ${totalDone} · 失败 ${totalFailed}`)),
-          h('button', { style: s.btn, onClick: load, disabled: busy }, 'Refresh')),
+          h('div', { style: s.actions },
+            h('select', {
+              style: s.input,
+              value: hours,
+              disabled: busy,
+              onChange: (event) => setHours(event.target.value),
+            },
+            h('option', { value: '1' }, '最近 1 小时'),
+            h('option', { value: '6' }, '最近 6 小时'),
+            h('option', { value: '24' }, '最近 24 小时'),
+            h('option', { value: '168' }, '最近 7 天'),
+            h('option', { value: '0' }, '全部')),
+            h('button', { style: s.btn, onClick: load, disabled: busy }, 'Refresh'))),
 
         h('div', { style: s.card },
           h('div', { style: s.sectionTitle }, '每个档位'),
@@ -944,7 +959,8 @@ window.__ModuleLoader__.load({
           laneRows.length === 0
             ? h('div', { style: s.hint }, '还没有已完成的调用。')
             : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-              h('div', { style: { ...s.meta, fontSize: 11 } }, `刻度 0 ─ ${axisMs}ms（历史最慢一次）`),
+              h('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: 10, color: color.muted } },
+                ...[0, 0.25, 0.5, 0.75, 1].map((fraction) => h('span', { key: fraction }, `${Math.round(axisMs * fraction)}ms`))),
               ...laneRows)),
 
         h('div', { style: s.card },
