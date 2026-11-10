@@ -2,6 +2,92 @@
 
 All notable changes to this plugin. Dates are ISO.
 
+## 0.1.3 — unreleased
+
+Closes a hole in the ladder, makes a child a worker rather than a second SupA,
+and adds usage statistics and a test suite.
+
+### Added
+
+- **Usage statistics.** `supa_stats` records every ladder call per tier and
+  reports counts, durations and the recent tasks; a Stats view beside the
+  conversation tabs plots a call timeline and duration bars over a selectable
+  time window.
+- **Token capture for codex tiers.** Token usage is read from the CLI's own
+  JSONL events and stored with the call.
+- **A test suite.** `npm test` runs `node --test`: ten cases cover the ladder
+  ceiling, holes, clamping, the pick and the fallback chain; seven more cover the
+  usage-window filter and the extreme ceiling clamps.
+- **Fan-out cap.** One SupA may start only so many children; the limit is a
+  policy setting and appears on the policy card beside the shell hand-off.
+- **Authority inheritance.** A worker inherits its parent's authority instead
+  of starting clamped to `workspace`.
+
+### Fixed
+
+- **A hole in the ladder is covered by the stronger tier above it** instead of
+  silently sending the task to a tier too weak for it.
+- **A hand-off is reported as spawned** — the note used to say a child started
+  even when the spawn had failed.
+- **The Stats view loads** — its client bundle had broken brackets.
+
+### Changed
+
+- **T1 must exist before SupA can start**; a ladder with an empty strongest
+  slot is refused rather than run degraded.
+- **A child is a worker, not a SupA.** It cannot spawn children, drain a queue
+  or change the ladder; it does the work and reports.
+
+## 0.1.2 — 2026-11-09
+
+### Added
+
+- **A SupA on/off pill in the session header** — toggles `mode: session` for
+  this session without opening settings.
+- **Foreground discipline.** A foreground sleep or a polling loop is refused
+  with the route to use instead, and a blocking command is handed off to a
+  child rather than stalled on.
+- **Soft stop.** Switching SupA off refuses new spawns without killing work in
+  flight; running children keep going and report into the queue.
+
+### Fixed
+
+- The pill is quiet by default and turns green only when SupA is on here.
+- Hand-offs keep the working directory, are not started twice for one command,
+  and name the whole command in the note; only long-blocking matches count.
+- The session list is bounded, so a long run cannot grow it without limit.
+- Docs: warn about the disabled flag a reload leaves behind, and add per-driver
+  verification and roadmap material.
+
+### Changed
+
+- **The charter says repair before asking** — diagnose and try a fix first, and
+  if help is needed, say what was tried. It also asks for a one-line statement
+  of intent, short turns, execution delegated to children, and every child
+  reporting into the queue.
+
+## 0.1.1 — 2026-11-09
+
+### Added
+
+- **Our own plugin-market index** in format 1, with an icon and a community
+  catalog entry, so the plugin can be installed from the market.
+- **`claude` tiers pass the tier effort** through `--effort`.
+
+### Fixed
+
+- A `claude` tier no longer waits for a permission prompt nobody can answer,
+  and errors printed on stdout are surfaced instead of a bare timeout.
+- The settings section gets a unique id, so it no longer collides with another
+  section.
+
+### Changed
+
+- The package is renamed `dsh-ladder-superagents`; repository URLs point at
+  that repo and the version is 0.1.1.
+- Contributor guide, roadmap, changelog, issue templates and docs noting that
+  `claude` and `kimi` need their own paid accounts.
+
 ## 0.1.0 — 2026-11-09
 
 First published version. Windows only.
