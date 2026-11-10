@@ -1024,8 +1024,8 @@ window.__ModuleLoader__.load({
       fontWeight: 500,
     }
 
-      useLang()
     function SupaStatsView() {
+      useLang()
       const [stats, setStats] = useState(null)
       const [error, setError] = useState('')
       const [busy, setBusy] = useState(false)
