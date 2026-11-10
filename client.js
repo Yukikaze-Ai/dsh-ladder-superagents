@@ -214,7 +214,7 @@ window.__ModuleLoader__.load({
       return h('div', { style: s.card },
         h('style', null, '@keyframes supaPulse{0%,100%{opacity:.35}50%{opacity:1}}'),
         h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
-          h('div', { style: s.sectionTitle }, t('Codex model catalog')),
+          h('div', { style: s.sectionTitle }, t('Available models')),
           h('div', { style: s.actions },
             h('label', {
               style: { display: 'flex', gap: 5, alignItems: 'center', fontSize: 12, color: color.muted, cursor: 'pointer' },
@@ -277,7 +277,7 @@ window.__ModuleLoader__.load({
                       title: status.label,
                     }),
                     h('span', { style: { fontSize: 12, minWidth: 150, color: color.text } }, model.slug),
-                    h('span', { style: s.chip }, model.visibility || '?'),
+                    h('span', { style: s.chip }, model.visibility === 'list' ? t('listed') : model.visibility === 'hide' ? t('hidden') : (model.visibility || '?')),
                     h('span', { style: { ...s.meta, flex: 1 } },
                       model.efforts.map((effort) => {
                         const verdict = verdictOf(model.slug, effort)
@@ -335,12 +335,12 @@ window.__ModuleLoader__.load({
               style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'nowrap' },
             },
             h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, `${route.provider}/${route.model}`),
-            h('span', { style: s.chip }, route.defaultEffort ? `default effort ${route.defaultEffort}` : t('no default effort')),
-            h('span', { style: { ...s.meta, flex: 1 } }, route.efforts.length ? `efforts ${route.efforts.join(' / ')}` : 'no reasoning metadata'),
+            h('span', { style: s.chip }, route.defaultEffort ? `${t('default effort')} ${route.defaultEffort}` : t('no default effort')),
+            h('span', { style: { ...s.meta, flex: 1 } }, route.efforts.length ? `${t('efforts')} ${route.efforts.join(' / ')}` : t('no reasoning metadata')),
             h('button', {
               style: s.btn,
               disabled: busyNow,
-              title: 'This route needs no pin: the llm service already advertises it. Add it at its default effort.',
+              title: t('route no pin hint'),
               onClick: () => onAdd({
                 action: 'add',
                 tier: {
@@ -877,7 +877,7 @@ window.__ModuleLoader__.load({
       'Questions': '提问',
       'Fan-out': '并发',
       'Shell hand-off': '命令转交',
-      'Codex model catalog': 'Codex 模型目录',
+      'Available models': '可用模型',
       'Harness routes (read live from the llm service)': 'Harness 路由（从 llm 服务实时读取）',
       'No catalog cached. Scan to read the model list.': '还没有缓存目录。点 Scan 读取模型列表。',
       'Failed routes': '失败的档位',
@@ -913,7 +913,12 @@ window.__ModuleLoader__.load({
       'tiers': '档位',
       'autoApprove': '自动批准',
       'authority': '权限',
-      'default effort': '默认 effort',
+      'default effort': '默认强度',
+      'efforts': '可选强度',
+      'no reasoning metadata': '无推理强度信息',
+      'route no pin hint': '这条路由不需要验证：llm 服务已经声明了它。按默认强度添加即可。',
+      'listed': '可见',
+      'hidden': '隐藏',
       'nothing verified hint': '还没有验证过任何模型。取消勾选"只看已验证"，然后点某个模型旁的"测试"——一次真实调用就能证明它可用。',
       'saving hint': '保存会改写 profile 里的插件行，插件重启约一秒。',
       'which sessions hint': '哪些会话作为 SupA 运行；按需启用需要每个会话执行一次 `supa_session enable`',
@@ -1170,6 +1175,7 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
 
 
