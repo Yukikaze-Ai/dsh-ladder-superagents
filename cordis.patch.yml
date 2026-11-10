@@ -1,6 +1,6 @@
 - insert:
     - id: supa
-      name: '@local/dsh-supa'
+      name: 'dsh-supa'
       config:
         enabled: true
         autoApprove: true

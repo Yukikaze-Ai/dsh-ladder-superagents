@@ -4,8 +4,7 @@ A DeepSeek Harness bundle that turns every session in the profile into a **SupA*
 session, following the concept of
 [`deepseek-ai/dsh-superagent-prototype`](https://github.com/deepseek-ai/dsh-superagent-prototype).
 
-Package id: `@local/dsh-supa` (the `@local/` scope is the convention for a
-bundle installed from this machine, not part of the name).
+Package id: `dsh-supa`.
 
 The prototype's idea, reduced to three properties per session:
 
@@ -246,7 +245,7 @@ literal: they consume each model's tokens/usage.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](LICENSE).
 
 ## Risks you should know
 
