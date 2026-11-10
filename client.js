@@ -583,7 +583,7 @@ window.__ModuleLoader__.load({
 
     function SupaSettings() {
       const [state, setState] = useState(null)
-      useLang()
+      const language = useLang()
       const [cwd, setCwd] = useState('')
       const [error, setError] = useState('')
       const [busy, setBusy] = useState(false)
@@ -649,7 +649,7 @@ window.__ModuleLoader__.load({
         if (!state) return ''
         const usable = tiers.filter((tier) => tier.available && tier.enabled && !tier.failure).length
         return `${usable}/${tiers.length} ${t('usable')} · ${tiers.length}/10 ${t('tiers')} · ${t('autoApprove')} ${String(state.config.autoApprove)} · ${t('authority')} ${state.config.authority}`
-      }, [state, tiers])
+      }, [state, tiers, language])
 
       if (error && !state) {
         return h('div', { style: s.page }, h('div', { style: s.error }, `dsh-ladder-superagents: ${error}`))
