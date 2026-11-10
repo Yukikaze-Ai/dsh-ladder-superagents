@@ -2426,8 +2426,8 @@ export function apply(ctx, config) {
       properties: {
         action: {
           type: 'string',
-          enum: ['write', 'read', 'search', 'list', 'digest'],
-          description: 'What to do with the ledger.',
+          enum: ['write', 'read', 'search', 'list', 'digest', 'compact'],
+          description: 'What to do with the ledger. `compact` replaces the records named in `ids` with the summary in `text`.',
         },
         text: { type: 'string', description: 'For `write`: the note, decision or finding.' },
         kind: {
@@ -2441,6 +2441,11 @@ export function apply(ctx, config) {
           description: 'For `write`: short tags for later search.',
         },
         id: { type: 'string', description: 'For `read`: exact record id.' },
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'For `compact`: the record ids the summary replaces.',
+        },
         query: { type: 'string', description: 'For `search`: case-insensitive substring.' },
         limit: { type: 'number', description: 'Maximum records to return (default 10, max 50).' },
       },
@@ -2458,6 +2463,27 @@ export function apply(ctx, config) {
       const cwd = sessionCwd(ctx, session)
       const file = ledgerFileOf(cwd, cfg)
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50)
+
+      if (args.action === 'compact') {
+        const ids = Array.isArray(args.ids) ? args.ids.map(String) : []
+        const text = String(args.text ?? '').trim()
+        if (ids.length === 0) throw new Error('compact requires `ids`: the records it replaces')
+        if (!text) throw new Error('compact requires `text`: the summary that replaces them')
+        const all = await readLedger(file)
+        const keep = all.filter((record) => !ids.includes(String(record.id)))
+        if (keep.length === all.length) throw new Error('none of those ids is in the ledger')
+        const compacted = {
+          id: newRecordId(),
+          at: nowIso(),
+          session: String(session.id),
+          kind: 'note',
+          tags: ['compacted'],
+          text,
+          covers: all.length - keep.length,
+        }
+        await writeTextAtomic(file, `${[...keep, compacted].map((entry) => JSON.stringify(entry)).join('\n')}\n`)
+        return `compacted ${compacted.covers} record(s) into ${compacted.id}; the ledger now holds ${keep.length + 1}`
+      }
 
       if (args.action === 'write') {
         const text = String(args.text ?? '').trim()
@@ -2588,11 +2614,15 @@ export function apply(ctx, config) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['peek', 'drain', 'stats'], description: 'What to do with the queue.' },
+        action: { type: 'string', enum: ['peek', 'drain', 'stats', 'compact'], description: 'What to do with the queue. `compact` replaces the records named in `ids` with the summary in `text`.' },
         ids: {
           type: 'array',
           items: { type: 'string' },
-          description: 'For `drain`: only these record ids, so you can keep the useful ones pending. Omit to drain everything.',
+          description: 'For `drain` and `compact`: the record ids to act on. `drain` keeps the rest pending.',
+        },
+        text: {
+          type: 'string',
+          description: 'For `compact`: the summary that replaces those records.',
         },
       },
       required: ['action'],
@@ -2618,6 +2648,38 @@ export function apply(ctx, config) {
       if (args.action === 'peek') return renderQueue(pending)
 
       const wanted = Array.isArray(args.ids) ? new Set(args.ids.map(String)) : undefined
+
+      if (args.action === 'compact') {
+        const text = String(args.text ?? '').trim()
+        if (!text) throw new Error('compact requires `text`: the summary that replaces the records')
+        if (!wanted || wanted.size === 0) throw new Error('compact requires `ids`: the records it replaces')
+        let records = []
+        try {
+          records = (await readFile(file, 'utf8')).split('\n').filter(Boolean).map((line) => {
+            try {
+              return JSON.parse(line)
+            } catch {
+              return null
+            }
+          }).filter(Boolean)
+        } catch {
+          throw new Error('this session has no inbox file yet')
+        }
+        const keep = records.filter((record) => !wanted.has(String(record.id)))
+        if (keep.length === records.length) throw new Error('none of those ids is in the queue')
+        const summary = {
+          id: newRecordId(),
+          at: nowIso(),
+          lane: 'compacted',
+          from: '',
+          kind: 'summary',
+          text,
+          covers: records.length - keep.length,
+        }
+        await writeTextAtomic(file, `${[...keep, summary].map((record) => JSON.stringify(record)).join('\n')}\n`)
+        return `compacted ${summary.covers} queue record(s) into ${summary.id}`
+      }
+
       const selected = wanted ? pending.filter((record) => wanted.has(record.id)) : pending
       if (selected.length === 0) return `no pending record matches those ids (depth ${pending.length})`
 
