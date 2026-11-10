@@ -21,9 +21,9 @@
 
 包 id：`dsh-ladder-superagents`。
 
-![模型层级：十个槽位，填了五个，每个都有自己的上限](docs/img/settings-ladder.png)
+![模型层级：十个槽位，填了五个，每个都有自己的上限](docs/img/settings-ladder.zh.png)
 
-![策略卡片：会话范围、审批、权限、冷却、扇出与 shell 交接](docs/img/settings-policy.png)
+![策略卡片：会话范围、审批、权限、冷却、扇出与 shell 交接](docs/img/settings-policy.zh.png)
 
 原型的思想，被归约为每个会话的三个属性：
 
@@ -233,6 +233,8 @@ SupA 给任务打 1-10 分；`supa_spawn` 带上 `difficulty: 7` 就会选出对
 
 ## 设置页面
 
+![设置页：模型阶梯、策略卡和可用模型目录](docs/img/catalog.zh.png)
+
 该 bundle 提供一个 Client 半边，在 Settings 面板中注册一个
 `dsh-ladder-superagents` 页面（`settings.section`，顺序 25）。它展示所选工作区
 的层级表 —— 位置、标签、路由、上限、每个层级的可用性 —— 并就地编辑它：
@@ -280,3 +282,4 @@ Bug 和复现是最有用的贡献。阅读
 路由测试都标记为 `good first issue`。
 
 发布说明位于 [CHANGELOG.md](CHANGELOG.md)。
+

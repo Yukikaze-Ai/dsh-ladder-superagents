@@ -21,9 +21,9 @@ session, following the concept of
 
 Package id: `dsh-ladder-superagents`.
 
-![The model ladder: ten slots, five filled, each with its own ceiling](docs/img/settings-ladder.png)
+![The model ladder: ten slots, five filled, each with its own ceiling](docs/img/settings-ladder.en.png)
 
-![The policy card: session scope, approvals, authority, cooldown, fan-out and shell hand-off](docs/img/settings-policy.png)
+![The policy card: session scope, approvals, authority, cooldown, fan-out and shell hand-off](docs/img/settings-policy.en.png)
 
 The prototype's idea, reduced to three properties per session:
 
@@ -245,6 +245,8 @@ tier's `command` field.
 
 ## Settings page
 
+![Settings: the ladder, the policy card and the model catalog](docs/img/catalog.en.png)
+
 The bundle ships a Client half that registers a `dsh-ladder-superagents` page in the
 Settings panel (`settings.section`, order 25). It shows the ladder of the
 selected workspace — position, label, route, ceiling, per-tier availability —
@@ -297,5 +299,6 @@ codebase learned the hard way, then pick something from
 marked `good first issue`.
 
 Release notes live in [CHANGELOG.md](CHANGELOG.md).
+
 
 
