@@ -1,0 +1,80 @@
+{
+  "format": 1,
+  "title": {
+    "en": "Yukikaze plugins",
+    "zh": "Yukikaze 插件"
+  },
+  "description": {
+    "en": "Plugins maintained by Yukikaze-Ai for DeepSeek Harness.",
+    "zh": "Yukikaze-Ai 为 DeepSeek Harness 维护的插件。"
+  },
+  "metadata": {
+    "categories": {
+      "agents": {
+        "title": {
+          "en": "Agents and routing",
+          "zh": "智能体与路由"
+        }
+      }
+    },
+    "labels": {
+      "windows": {
+        "title": {
+          "en": "Windows",
+          "zh": "Windows"
+        }
+      },
+      "experimental": {
+        "title": {
+          "en": "Experimental",
+          "zh": "实验性"
+        }
+      }
+    },
+    "sortKeys": {}
+  },
+  "plugins": [
+    {
+      "name": "dsh-ladder-superagents",
+      "title": {
+        "en": "Ladder Superagents",
+        "zh": "阶梯超级智能体"
+      },
+      "description": {
+        "en": "A ten-slot model ladder for subagents: rank your models T1 to T10, pass a 1-10 difficulty, and the plugin picks the weakest tier that still covers it. Failed routes fall back to the next tier, every configuration can be verified with a real call, and the settings page edits the ladder by drag and drop.",
+        "zh": "给子代理用的十槽模型阶梯：把模型排成 T1–T10，交任务时只报 1–10 的难度，插件挑仍能覆盖它的最弱一档；失败自动降档，每个配置都能用真实调用验证，设置页可拖拽编辑。"
+      },
+      "icon": "icon.svg",
+      "author": "Yukikaze-Ai",
+      "homepage": "https://github.com/Yukikaze-Ai/dsh-ladder-superagents",
+      "repository": {
+        "url": "https://github.com/Yukikaze-Ai/dsh-ladder-superagents"
+      },
+      "metadata": {
+        "category": "agents",
+        "keywords": [
+          "subagent",
+          "model routing",
+          "model ladder",
+          "fallback",
+          "codex",
+          "claude code"
+        ],
+        "labels": [
+          "windows",
+          "experimental"
+        ],
+        "sortKeys": {}
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1794281840,
+          "source": {
+            "type": "npm"
+          }
+        }
+      ]
+    }
+  ]
+}
