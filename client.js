@@ -178,6 +178,7 @@ window.__ModuleLoader__.load({
     function Catalog({ catalog, llm, busy, onScan, onPin, onAdd, canPinTiers }) {
       const [pending, setPending] = useState('')
       const [adding, setAdding] = useState('')
+      const [verifiedOnly, setVerifiedOnly] = useState(false)
       const run = async (kind, body) => {
         setPending(kind)
         try {
@@ -200,6 +201,16 @@ window.__ModuleLoader__.load({
         h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
           h('div', { style: s.sectionTitle }, 'Codex model catalog'),
           h('div', { style: s.actions },
+            h('label', {
+              style: { display: 'flex', gap: 5, alignItems: 'center', fontSize: 12, color: color.muted, cursor: 'pointer' },
+              title: 'Hide models that have not been pinned or that failed',
+            },
+            h('input', {
+              type: 'checkbox',
+              checked: verifiedOnly,
+              onChange: (event) => setVerifiedOnly(event.target.checked),
+            }),
+            'verified only'),
             h('button', { style: s.btn, onClick: () => run('scan', { action: 'scan' }), disabled: busyNow }, 'Scan'),
             h('button', {
               style: canPinTiers ? s.btn : { ...s.btn, opacity: 0.4 },
@@ -222,7 +233,11 @@ window.__ModuleLoader__.load({
                 h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(true) }), 'pinned usable'),
                 h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: { ...s.dot(true), background: color.warn } }), 'scanned only'),
                 h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(false) }), 'pin failed')),
-              ...catalog.models.map((model) => {
+              ...catalog.models.filter((model) => {
+                if (!verifiedOnly) return true
+                const verdicts = model.efforts.map((effort) => verdictOf(model.slug, effort)).filter(Boolean)
+                return verdicts.length > 0 && verdicts.every((verdict) => verdict.ok)
+              }).map((model) => {
                 const verdicts = model.efforts.map((effort) => verdictOf(model.slug, effort)).filter(Boolean)
                 const status = verdicts.length === 0
                   ? { color: color.warn, label: 'scanned, not pinned' }
@@ -293,7 +308,22 @@ window.__ModuleLoader__.load({
             },
             h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, `${route.provider}/${route.model}`),
             h('span', { style: s.chip }, route.defaultEffort ? `default effort ${route.defaultEffort}` : 'no default effort'),
-            h('span', { style: { ...s.meta, flex: 1 } }, route.efforts.length ? `efforts ${route.efforts.join(' / ')}` : 'no reasoning metadata'))))
+            h('span', { style: { ...s.meta, flex: 1 } }, route.efforts.length ? `efforts ${route.efforts.join(' / ')}` : 'no reasoning metadata'),
+            h('button', {
+              style: s.btn,
+              disabled: busyNow,
+              title: 'This route needs no pin: the llm service already advertises it. Add it at its default effort.',
+              onClick: () => onAdd({
+                action: 'add',
+                tier: {
+                  label: `${route.model}${route.defaultEffort ? ` (${route.defaultEffort})` : ''}`,
+                  kind: 'llm',
+                  provider: route.provider,
+                  model: route.model,
+                  reasoningEffort: route.defaultEffort || undefined,
+                },
+              }),
+            }, 'Add'))))
           : null,
       )
     }
