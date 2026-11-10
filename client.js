@@ -327,8 +327,8 @@ window.__ModuleLoader__.load({
       return h('div', { style: s.card },
         h('div', { style: s.sectionTitle }, 'Add a tier'),
         h('div', { style: s.hint }, disabled
-          ? 'The ladder already holds 10 tiers — remove one to add another.'
-          : 'Added at the weakest end; drag it into place afterwards.'),
+          ? 'All ten slots are taken — remove one to add another.'
+          : 'Added to the first free slot; drag it into place afterwards.'),
         h('div', { style: s.row },
           h('select', { style: s.input, value: kind, onChange: (event) => setKind(event.target.value) },
             h('option', { value: 'llm' }, 'llm'),
@@ -426,6 +426,7 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [dragIndex, setDragIndex] = useState(null)
       const [resetting, setResetting] = useState(false)
+      const [manualOpen, setManualOpen] = useState(false)
       useEffect(() => {
         if (!resetting) return undefined
         const timer = setTimeout(() => setResetting(false), 3000)
@@ -560,7 +561,13 @@ window.__ModuleLoader__.load({
           : null,
 
         h(Catalog, { catalog: state.catalog, llm: state.llm, busy, onScan: act, onPin: act, onAdd: act }),
-        h(AddForm, { drivers: state.drivers, onAdd: act, disabled: tiers.length >= 10 }),
+        manualOpen
+          ? h(AddForm, { drivers: state.drivers, onAdd: act, disabled: tiers.length >= 10 })
+          : h('button', {
+            style: { ...s.btn, alignSelf: 'flex-start' },
+            onClick: () => setManualOpen(true),
+            title: 'For a model that is in neither the codex catalog nor the live llm routes',
+          }, 'Add a model manually'),
 
         error ? h('div', { style: s.error }, error) : null,
         h('div', { style: s.hint },
