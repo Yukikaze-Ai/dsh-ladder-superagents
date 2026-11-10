@@ -45,6 +45,11 @@ const DEFAULTS = {
   autoApprove: false,
   /** Highest authority a root SupA holds without asking the human: 'workspace' | 'full'. */
   authority: 'workspace',
+  /**
+   * How many children one SupA may have running at once. A flat fan-out has no
+   * depth limit by design, so the only brake is width.
+   */
+  maxChildren: 8,
   /** Refuse `ask_user_question` with a "decide and record" directive. */
   denyBlockingQuestions: false,
   /**
@@ -1027,6 +1032,16 @@ export function apply(ctx, config) {
     return true
   }
 
+  const runningChildrenOf = (sessionId) => {
+    try {
+      const agents = ctx.get?.('agents')
+      return (agents?.list?.() ?? []).filter((entry) => String(entry.session?.header?.parentSession ?? '') === String(sessionId)
+        && entry.status === 'running').length
+    } catch {
+      return 0
+    }
+  }
+
   const timers = new Set()
   const nudgeState = new Map()
   const retryController = new AbortController()
@@ -1178,6 +1193,9 @@ export function apply(ctx, config) {
       }
     }
 
+    // A flat fan-out is bounded by width, not depth.
+    if (runningChildrenOf(agent.session?.id) >= cfg.maxChildren) return 'full'
+
     const brief = [
       '## Assignment',
       'Your parent tried to run this in the foreground and it would block its turn, so it was handed to you.',
@@ -1262,6 +1280,10 @@ export function apply(ctx, config) {
     if (!what) return undefined
 
     const handed = handOffCommand(execution.agent, command, what, String(args.workdir ?? ''))
+    if (handed === 'full') {
+      return `You already have ${cfg.maxChildren} workers running (maxChildren), so this command was not handed off either. `
+        + 'Wait for one to report into `supa_inbox`, or run it with `run_in_background: true`.'
+    }
     if (handed === 'spawned') {
       return `Handed to a child instead of blocking this turn (${what}). It runs the command and reports the output into \`supa_inbox\`; do not wait for it, keep working.`
     }
@@ -2444,6 +2466,13 @@ export function apply(ctx, config) {
       const session = agent.session
       const cwd = sessionCwd(ctx, session)
       const file = ledgerFileOf(cwd, cfg)
+
+      // A flat fan-out is bounded by width, not depth.
+      const running = runningChildrenOf(session.id)
+      if (running >= cfg.maxChildren) {
+        throw new Error(`this SupA already has ${running} children running (maxChildren: ${cfg.maxChildren}); `
+          + 'wait for one to report into `supa_inbox`, or raise maxChildren in the plugin config')
+      }
       const sections = []
       const parts = []
       const label = String(args.label ?? '').trim() || 'SupA child'
