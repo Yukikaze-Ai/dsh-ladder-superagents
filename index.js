@@ -416,6 +416,24 @@ const DEFAULT_TIERS = [
   { label: 'DeepSeek Flash 4.1 (off)', provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'off', slot: 4 },
 ]
 
+function sessionsFileOf() {
+  return join(stateDirOf(), 'sessions.json')
+}
+
+function readEnabledSessions() {
+  try {
+    const raw = JSON.parse(readFileSync(sessionsFileOf(), 'utf8'))
+    return Array.isArray(raw?.enabled) ? raw.enabled.map(String) : []
+  } catch {
+    return []
+  }
+}
+
+async function writeEnabledSessions(list) {
+  await mkdir(stateDirOf(), { recursive: true })
+  await writeFile(sessionsFileOf(), `${JSON.stringify({ version: 1, enabled: list }, null, 2)}\n`, 'utf8')
+}
+
 function defaultLadder() {
   return { version: 1, tiers: DEFAULT_TIERS.map((tier, index) => normalizeTier(tier, index)) }
 }
@@ -894,6 +912,13 @@ export function apply(ctx, config) {
   const isSupa = (agent) => {
     if (!agent) return false
     if (cfg.mode === 'root') return !agent.session?.header?.parentSession
+    if (cfg.mode === 'session') {
+      const id = agent.session?.id ? String(agent.session.id) : ''
+      const parent = agent.session?.header?.parentSession
+      const enabled = readEnabledSessions()
+      if (id && enabled.includes(id)) return true
+      return Boolean(parent) && enabled.includes(String(parent))
+    }
     if (cfg.mode === 'preset') {
       const preset = agent.session?.header?.agentPreset
       return Array.isArray(cfg.presets) && cfg.presets.includes(preset)
@@ -1029,6 +1054,58 @@ export function apply(ctx, config) {
       return QUESTION_DENIAL
     }))
   }
+
+  // ------------------------------------------------------------- sessions
+  //
+  // Mode "session" makes SupA opt-in: the plugin is installed profile-wide but
+  // a session becomes a SupA only after it is enabled here. Children inherit
+  // from their parent, so a worker never has to be enabled by hand.
+
+  if (cfg.mode === 'session') {
+    ctx.effect(() => ctx.tools.guard((execution) => {
+      const name = typeof execution?.name === 'string' ? execution.name : ''
+      if (!name.startsWith('supa_') || name === 'supa_session') return undefined
+      if (isSupa(execution.agent)) return undefined
+      return 'SupA is not enabled in this session (mode "session"). Ask the user whether to enable it, then call `supa_session` with action "enable".'
+    }))
+  }
+
+  ctx.tools.register({
+    name: 'supa_session',
+    description: 'Report or change whether THIS session runs as a SupA. In mode "session" the plugin is installed but inert until a session is enabled here; the switch is per session and persists. Children inherit their parent\'s state.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['status', 'enable', 'disable'], description: 'status reads the flag, enable/disable changes it for this session.' },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          session: { type: 'string' },
+          mode: { type: 'string' },
+          supa: { type: 'boolean' },
+        },
+      },
+      render: (_args, value) => textBlocks(JSON.stringify(value, null, 2)),
+    },
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      const agent = exec.agent
+      if (!agent) throw new Error('supa_session requires a calling agent')
+      const id = agent.session?.id ? String(agent.session.id) : ''
+      if (!id) throw new Error('this session has no id')
+      let enabled = readEnabledSessions()
+      if (args.action === 'enable' && !enabled.includes(id)) enabled = [...enabled, id]
+      if (args.action === 'disable') enabled = enabled.filter((entry) => entry !== id)
+      if (args.action !== 'status') await writeEnabledSessions(enabled)
+      return { session: id, mode: cfg.mode, supa: isSupa(agent) }
+    },
+  })
 
   // ------------------------------------------------------------- approvals
   //
