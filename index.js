@@ -486,6 +486,37 @@ async function writeEnabledSessions(list) {
   await writeFile(sessionsFileOf(), `${JSON.stringify({ version: 1, enabled: bounded }, null, 2)}\n`, 'utf8')
 }
 
+function usageFileOf() {
+  return join(stateDirOf(), 'usage.jsonl')
+}
+
+/** Append one usage line. Statistics must never break a spawn. */
+function recordUsage(entry) {
+  try {
+    const line = `${JSON.stringify({ at: Date.now(), ...entry })}\n`
+    return appendFile(usageFileOf(), line, 'utf8').catch(() => {})
+  } catch {
+    return Promise.resolve()
+  }
+}
+
+function readUsage(limit = 2000) {
+  try {
+    const raw = readFileSync(usageFileOf(), 'utf8')
+    const lines = raw.split('\n').filter(Boolean)
+    const slice = lines.slice(-limit)
+    return slice.map((line) => {
+      try {
+        return JSON.parse(line)
+      } catch {
+        return null
+      }
+    }).filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
 function defaultLadder() {
   return { version: 1, tiers: DEFAULT_TIERS.map((tier, index) => normalizeTier(tier, index)) }
 }
@@ -1384,6 +1415,64 @@ export function apply(ctx, config) {
         ].join('; ')
       }
       return value
+    },
+  })
+
+  ctx.tools.register({
+    name: 'supa_stats',
+    description: 'How the model ladder was actually used: per tier, how many children it started, how many finished, how many failed, the average duration, and the recent tasks it handled. Reads a local usage log; sends nothing anywhere.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['summary', 'recent'], description: '`summary` aggregates per tier; `recent` lists the latest calls.' },
+        limit: { type: 'number', description: 'For `recent`: how many calls, 1-100 (default 20).' },
+      },
+      additionalProperties: false,
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => textBlocks(String(value ?? '')),
+    },
+    isConcurrencySafe: () => true,
+    async execute(args) {
+      const records = readUsage(5000)
+      if (records.length === 0) return `no usage recorded yet (${usageFileOf()})`
+
+      if (args.action === 'recent') {
+        const limit = Math.min(100, Math.max(1, Number(args.limit) || 20))
+        return records.slice(-limit).map((record) => {
+          const time = new Date(Number(record.at) || 0).toISOString().replace('T', ' ').slice(0, 19)
+          const slot = record.slot ? `T${record.slot}` : 'T?'
+          const task = record.task ? ` — ${String(record.task).slice(0, 60)}` : ''
+          const took = record.ms ? ` (${record.ms}ms)` : ''
+          return `${time} ${String(record.kind ?? '?').padEnd(6)} ${slot} ${record.route ?? 'inherit'}${task}${took}`
+        }).join('\n')
+      }
+
+      const byRoute = new Map()
+      for (const record of records) {
+        const key = String(record.route ?? 'inherit')
+        const entry = byRoute.get(key) ?? { route: key, slot: record.slot ?? null, started: 0, done: 0, failed: 0, ms: [], tasks: [] }
+        if (record.kind === 'start') {
+          entry.started += 1
+          if (record.task) entry.tasks.push(String(record.task))
+        }
+        if (record.kind === 'done') entry.done += 1
+        if (record.kind === 'failed') entry.failed += 1
+        if (Number(record.ms)) entry.ms.push(Number(record.ms))
+        if (!entry.slot && record.slot) entry.slot = record.slot
+        byRoute.set(key, entry)
+      }
+
+      const rows = [...byRoute.values()].sort((left, right) => right.started - left.started)
+      const lines = rows.map((entry) => {
+        const avg = entry.ms.length
+          ? Math.round(entry.ms.reduce((sum, value) => sum + value, 0) / entry.ms.length)
+          : 0
+        const tasks = entry.tasks.slice(-3).map((task) => task.slice(0, 24)).join(' | ')
+        return `T${entry.slot ?? '?'} ${entry.route}: started ${entry.started}, done ${entry.done}, failed ${entry.failed}, avg ${avg}ms${tasks ? ` · ${tasks}` : ''}`
+      })
+      return [`usage records: ${records.length} (${usageFileOf()})`, ...lines].join('\n')
     },
   })
 
@@ -2732,12 +2821,43 @@ export function apply(ctx, config) {
           })
         })
 
+        const cliStartedAt = Date.now()
+        recordUsage({
+          kind: 'start',
+          child: cliId,
+          task: label,
+          difficulty: typeof args.difficulty === 'number' ? args.difficulty : null,
+          tier: tier?.id ?? '',
+          slot: tier?.slot ?? null,
+          route: tierRoute(tier),
+          attempt,
+        })
         result.then((text) => {
+          recordUsage({
+            kind: 'done',
+            child: cliId,
+            task: label,
+            tier: tier?.id ?? '',
+            slot: tier?.slot ?? null,
+            route: tierRoute(tier),
+            ms: Date.now() - cliStartedAt,
+            stop: 'completed',
+          })
           const clipped = text.length > cfg.maxCliResultChars
             ? `${text.slice(0, cfg.maxCliResultChars)}\n… (${text.length} chars total)`
             : text
           enqueueParentNote(`${driverName} ${tier.label} finished:\n${clipped}`, 'result')
         }, (error) => {
+          recordUsage({
+            kind: 'failed',
+            child: cliId,
+            task: label,
+            tier: tier?.id ?? '',
+            slot: tier?.slot ?? null,
+            route: tierRoute(tier),
+            ms: Date.now() - cliStartedAt,
+            stop: `cli: ${String(error?.message ?? error).slice(0, 120)}`,
+          })
           onFailure(tier, attempt, `cli: ${error?.message ?? error}`)
         })
 
@@ -2757,13 +2877,44 @@ export function apply(ctx, config) {
           delivery: 'parent',
         })
         grants.set(String(activation.childId), authority)
+        const startedAt = Date.now()
+        recordUsage({
+          kind: 'start',
+          child: String(activation.childId),
+          task: label,
+          difficulty: typeof args.difficulty === 'number' ? args.difficulty : null,
+          tier: tier?.id ?? '',
+          slot: tier?.slot ?? null,
+          route: tier ? tierRoute(tier) : 'inherit',
+          attempt,
+        })
         const settled = activation.result
         if (settled && typeof settled.then === 'function') {
           settled.then((result) => {
             const stop = result?.stopReason
+            recordUsage({
+              kind: stop === 'completed' ? 'done' : 'failed',
+              child: String(activation.childId),
+              task: label,
+              tier: tier?.id ?? '',
+              slot: tier?.slot ?? null,
+              route: tier ? tierRoute(tier) : 'inherit',
+              ms: Date.now() - startedAt,
+              stop: String(stop ?? 'unknown'),
+            })
             if (stop === 'completed' || stop === 'aborted') return
             onFailure(tier, attempt, String(stop ?? 'unknown'))
           }, () => {
+            recordUsage({
+              kind: 'failed',
+              child: String(activation.childId),
+              task: label,
+              tier: tier?.id ?? '',
+              slot: tier?.slot ?? null,
+              route: tier ? tierRoute(tier) : 'inherit',
+              ms: Date.now() - startedAt,
+              stop: 'error',
+            })
             onFailure(tier, attempt, 'error')
           })
         }
