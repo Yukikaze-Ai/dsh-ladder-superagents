@@ -1328,7 +1328,7 @@ export function apply(ctx, config) {
     } catch {
       // the notification is best effort; the command still runs
     }
-    return true
+    return 'spawned'
   }
 
   const SLEEP_PATTERN = /\b(?:sleep\s+(\d+(?:\.\d+)?)|Start-Sleep\s+(?:-Seconds\s+)?(\d+(?:\.\d+)?)|timeout\s+\/t\s+(\d+))\b/gi
