@@ -4,6 +4,6 @@
       config:
         enabled: true
         autoApprove: true
-        denyBlockingQuestions: true
+        denyBlockingQuestions: false
         continueWhenBlocked: true
         continueOnOpenTodos: false

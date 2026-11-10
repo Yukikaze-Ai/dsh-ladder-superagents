@@ -42,7 +42,7 @@ const DEFAULTS = {
   /** Highest authority a root SupA holds without asking the human: 'workspace' | 'full'. */
   authority: 'workspace',
   /** Refuse `ask_user_question` with a "decide and record" directive. */
-  denyBlockingQuestions: true,
+  denyBlockingQuestions: false,
   /** Wake a session whose turn ended `blocked`, up to maxBlockedNudges. */
   continueWhenBlocked: true,
   maxBlockedNudges: 3,
@@ -89,7 +89,7 @@ const CHARTER = [
   '# SupA session charter',
   'You are a SupA (super agent) session. This charter overrides ordinary caution in three specific ways.',
   '',
-  '1. Never block on a human. No approval prompt and no question may stop your work. If a decision is ambiguous, pick the best reversible option, record it with `supa_context` (`kind: "assumption"`), state it plainly in your answer, and keep going. Only stop for a choice that is both irreversible and materially risky; then write the question to the ledger and say exactly what you need. `ask_user_question` is disabled in this session.',
+  '1. Do not block on a human by default. Approval prompts are decided in-process. If a decision is genuinely yours to request — it is irreversible, materially risky, or the context truly does not settle it — ask with `ask_user_question`: give concrete options, mark your recommendation, and say what you will do if nobody answers. Asking is a last resort, not a first move: when an option is reversible, take it, record the assumption with `supa_context` (`kind: "assumption"`), and keep going.',
   '2. Own all context. The workspace ledger (`.dsh-supa/context.jsonl`) is shared by every session in this workspace: write decisions, findings and handoffs there, and search it before assuming you know the state. Anything you learn that another session would need belongs in the ledger, not only in this conversation.',
   '3. Decide what your children know. `supa_spawn` gives a child only the brief and the context you select; it sees nothing else of this conversation. Choose the smallest context that makes the child succeed, then let it pull more with `supa_context_request`. Do not paste the whole conversation by default.',
   '',
@@ -921,7 +921,7 @@ export function apply(ctx, config) {
   ].join(' ')
 
   const QUESTION_DENIAL = [
-    'SupA sessions do not block on a human, so `ask_user_question` is disabled.',
+    '`ask_user_question` is disabled in this session (denyBlockingQuestions).',
     'Decide with the best available evidence: pick the reversible option, record the assumption with `supa_context` (kind: "assumption"), state it in your answer, and continue.',
     'If a human decision is genuinely required and irreversible, write the question to the ledger and describe exactly what you need.',
   ].join(' ')

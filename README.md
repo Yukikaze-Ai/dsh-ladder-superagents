@@ -10,7 +10,7 @@ The prototype's idea, reduced to three properties per session:
 
 | Property | Prototype mechanism | This plugin |
 | --- | --- | --- |
-| **Never blocked** | The router decides; Executors report instead of waiting | Approvals are decided in-process, `ask_user_question` is refused with a "decide and record" directive, a `blocked` turn wakes itself again |
+| **Never blocked** | The router decides; Executors report instead of waiting | Approvals are decided in-process, the charter makes asking a last resort rather than a first move, a `blocked` turn wakes itself again |
 | **Owns all context** | Ticket records, scoped `orchestrator_read` | A workspace ledger (`.dsh-supa/context.jsonl`) every session can read/write, injected as a live digest into the system prompt |
 | **Decides the child's context** | Mandate + scoped Inputs handed to an Executor | `supa_spawn` builds a context pack from the parent's selection; the child pulls more with `supa_context_request` and the parent answers with `supa_context_supply` |
 
@@ -37,8 +37,10 @@ Runtime behavior:
 
 - `approval/request` is answered `allowed-once` for SupA sessions, and every
   grant is appended to the ledger as `auto-approval`.
-- `ask_user_question` is denied by a monotonic tool guard with instructions to
-  decide, record an assumption, and continue.
+- `ask_user_question` is allowed by default: when a decision is genuinely the
+  user's, the SupA pops the options instead of guessing. Set
+  `denyBlockingQuestions: true` to make that tool fail with a "decide and
+  record" directive instead.
 - A turn ending `blocked` is woken with a "do not wait" nudge (at most 3 per
   10 minutes per session; the counter decays, so it cannot loop forever).
 - Optional: a turn ending `completed` with open todos wakes again
@@ -55,7 +57,7 @@ Set on the `supa` row in the bundle's `cordis.patch.yml`:
 | `presets` | `[]` | Preset ids for `mode: preset` |
 | `ledgerDir` | `.dsh-supa` | Ledger directory, relative to the session working directory |
 | `autoApprove` | `true` | Decide approvals instead of asking a human |
-| `denyBlockingQuestions` | `true` | Refuse `ask_user_question` |
+| `denyBlockingQuestions` | `false` | Refuse `ask_user_question` instead of letting it ask |
 | `continueWhenBlocked` | `true` | Wake a `blocked` turn |
 | `maxBlockedNudges` | `3` | Nudges per `nudgeWindowMs` |
 | `nudgeWindowMs` | `600000` | Decay window for the nudge counter |
