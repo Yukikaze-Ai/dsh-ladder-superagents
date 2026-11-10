@@ -228,7 +228,12 @@ window.__ModuleLoader__.load({
           }, pendingText)
           : catalog
             ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-              h('div', { style: s.hint }, `${catalog.models.length} models · scanned ${scanned}`),
+              h('div', { style: s.hint },
+                `${catalog.models.length} models · scanned ${scanned} · `
+                + `${catalog.models.filter((model) => {
+                  const verdicts = model.efforts.map((effort) => verdictOf(model.slug, effort)).filter(Boolean)
+                  return verdicts.length > 0 && verdicts.every((verdict) => verdict.ok)
+                }).length} verified usable`),
               h('div', { style: { display: 'flex', gap: 14, alignItems: 'center', fontSize: 11, color: color.muted } },
                 h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(true) }), 'pinned usable'),
                 h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: { ...s.dot(true), background: color.warn } }), 'scanned only'),
