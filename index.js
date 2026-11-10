@@ -1427,6 +1427,17 @@ export function apply(ctx, config) {
         available: Boolean(availability[index]),
         failure: failureActive(failures[tier.id], cfg) ? failures[tier.id] : null,
       })),
+      // The failure marks belong to a list of their own: the ladder row only
+      // says enabled or disabled.
+      failures: ladder.tiers
+        .filter((tier) => failureActive(failures[tier.id], cfg))
+        .map((tier) => ({
+          id: tier.id,
+          label: tier.label,
+          route: tierRoute(tier),
+          error: String(failures[tier.id].error ?? ''),
+          at: Number(failures[tier.id].at) || 0,
+        })),
     }
   }
 

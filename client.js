@@ -157,22 +157,14 @@ window.__ModuleLoader__.load({
         h('span', { style: s.rank }, String(index + 1))),
       h('div', { style: s.body },
         h('div', { style: s.tierTitle }, tier.label),
-        h('div', { style: s.meta }, `${tier.route} · ceiling ${tier.ceiling} · ${tier.id}`),
-        tier.failure ? h('div', { style: s.fail }, `failed: ${String(tier.failure.error || '').slice(0, 120)}`) : null),
+        h('div', { style: s.meta }, `${tier.route} · ceiling ${tier.ceiling} · ${tier.id}`)),
       h('div', { style: s.state },
-        h('span', { style: s.dot(tier.available && tier.enabled && !tier.failure) }),
-        h('span', null, tier.failure ? 'failed' : tier.enabled ? (tier.available ? 'usable' : 'missing') : 'disabled')),
+        h('span', { style: s.dot(tier.available && tier.enabled) }),
+        h('span', null, tier.enabled ? (tier.available ? 'usable' : 'missing') : 'disabled')),
       h('div', { style: s.actions },
         h('button', { style: s.btnIcon, onClick: () => move(index - 1), disabled: index === 0, title: 'Move up' }, '↑'),
         h('button', { style: s.btnIcon, onClick: () => move(index + 1), disabled: index === count - 1, title: 'Move down' }, '↓'),
         h('button', { style: s.btn, onClick: toggle, title: tier.enabled ? 'Disable this tier' : 'Enable this tier' }, tier.enabled ? 'Off' : 'On'),
-        tier.failure
-          ? h('button', {
-            style: s.btn,
-            onClick: () => onAction({ action: 'clear', id: tier.id }),
-            title: 'Clear the failure and put this tier back in rotation',
-          }, 'Restore')
-          : null,
         h('button', {
           style: confirming ? { ...s.btn, color: color.bad } : s.btnIcon,
           onClick: () => {
@@ -384,6 +376,20 @@ window.__ModuleLoader__.load({
               dragIndex,
               setDragIndex,
             }))),
+
+        state.failures?.length
+          ? h('div', { style: s.card },
+            h('div', { style: s.sectionTitle }, 'Failed configurations'),
+            h('div', { style: s.hint }, 'A failed tier leaves rotation automatically. Restore clears the mark and puts it back.'),
+            ...state.failures.map((failure) => h('div', {
+              key: failure.id,
+              style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
+            },
+            h('span', { style: { color: color.bad, fontSize: 12 } }, '✕'),
+            h('span', { style: { fontSize: 12, minWidth: 150, color: color.text } }, failure.label),
+            h('span', { style: { ...s.meta, flex: 1 } }, `${failure.route} · ${String(failure.error).slice(0, 140)}`),
+            h('button', { style: s.btn, onClick: () => act({ action: 'clear', id: failure.id }) }, 'Restore'))))
+          : null,
 
         h(Catalog, { catalog: state.catalog, llm: state.llm, busy, onScan: act, onPin: act }),
         h(AddForm, { drivers: state.drivers, onAdd: act, disabled: tiers.length >= 10 }),
