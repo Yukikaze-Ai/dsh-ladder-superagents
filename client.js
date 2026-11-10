@@ -799,6 +799,29 @@ window.__ModuleLoader__.load({
       const totalDone = summary.reduce((sum, row) => sum + row.done, 0)
       const totalFailed = summary.reduce((sum, row) => sum + row.failed, 0)
 
+      const summaryRows = summary.map((row) => h('div', {
+        key: row.route,
+        style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
+      },
+      h('span', { style: { fontSize: 12, minWidth: 34, color: color.text } }, `T${row.slot ?? '?'}`),
+      h('span', { style: { ...s.meta, flex: 1, color: color.text } }, row.route),
+      h('span', { style: s.meta }, `invoked ${row.started}`),
+      h('span', { style: { ...s.meta, color: color.ok } }, `done ${row.done}`),
+      h('span', { style: { ...s.meta, color: row.failed ? color.bad : color.muted } }, `failed ${row.failed}`),
+      h('span', { style: s.meta }, `avg ${row.avgMs}ms`)))
+
+      const recentRows = (records) => records.map((record, index) => h('div', {
+        key: `${record.at}-${index}`,
+        style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'nowrap', fontSize: 12 },
+      },
+      h('span', { style: { ...s.meta, minWidth: 150 } }, new Date(record.at).toLocaleString()),
+      h('span', {
+        style: { minWidth: 46, color: record.kind === 'failed' ? color.bad : record.kind === 'done' ? color.ok : color.muted },
+      }, String(record.kind ?? '?')),
+      h('span', { style: { ...s.meta, minWidth: 34 } }, `T${record.slot ?? '?'}`),
+      h('span', { style: { ...s.meta, flex: 1, color: color.text } }, String(record.task ?? '').slice(0, 60)),
+      h('span', { style: s.meta }, record.ms ? `${record.ms}ms` : '')))
+
       return h('div', { style: { ...s.page, gap: 10 } },
         h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
@@ -810,37 +833,13 @@ window.__ModuleLoader__.load({
           h('div', { style: s.sectionTitle }, '每个档位'),
           summary.length === 0
             ? h('div', { style: s.hint }, '还没有调用记录。派一次任务之后这里就会有。')
-            : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-              ...summary.map((row) => h('div', {
-                key: row.route,
-                style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
-              },
-              h('span', { style: { fontSize: 12, minWidth: 34, color: color.text } }, `T${row.slot ?? '?'}`),
-              h('span', { style: { ...s.meta, flex: 1, color: color.text } }, row.route),
-              h('span', { style: s.meta }, `invoked ${row.started}`),
-              h('span', { style: { ...s.meta, color: color.ok } }, `done ${row.done}`),
-              h('span', { style: { ...s.meta, color: row.failed ? color.bad : color.muted } }, `failed ${row.failed}`),
-              h('span', { style: s.meta }, `avg ${row.avgMs}ms`)))),
+            : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, ...summaryRows)),
 
         h('div', { style: s.card },
           h('div', { style: s.sectionTitle }, '最近调用'),
           recent.length === 0
             ? h('div', { style: s.hint }, '—')
-            : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
-              ...recent.map((record, index) => h('div', {
-                key: `${record.at}-${index}`,
-                style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'nowrap', fontSize: 12 },
-              },
-              h('span', { style: { ...s.meta, minWidth: 150 } }, new Date(record.at).toLocaleString()),
-              h('span', {
-                style: {
-                  minWidth: 46,
-                  color: record.kind === 'failed' ? color.bad : record.kind === 'done' ? color.ok : color.muted,
-                },
-              }, String(record.kind ?? '?')),
-              h('span', { style: { ...s.meta, minWidth: 34 } }, `T${record.slot ?? '?'}`),
-              h('span', { style: { ...s.meta, flex: 1, color: color.text } }, String(record.task ?? '').slice(0, 60)),
-              h('span', { style: s.meta }, record.ms ? `${record.ms}ms` : '')))))
+            : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } }, ...recentRows(recent))))
     }
 
     return {
