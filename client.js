@@ -696,6 +696,7 @@ window.__ModuleLoader__.load({
       const sessionId = String(props?.sessionId ?? props?.session?.id ?? '')
       const [state, setState] = useState(null)
       const [busy, setBusy] = useState(false)
+      const [hover, setHover] = useState(false)
 
       useEffect(() => {
         let alive = true
@@ -732,23 +733,28 @@ window.__ModuleLoader__.load({
         type: 'button',
         onClick: toggle,
         disabled: locked || busy,
+        onMouseEnter: () => setHover(true),
+        onMouseLeave: () => setHover(false),
         title: locked
           ? `SupA answers in every session (mode: ${mode})`
           : enabled
             ? 'SupA is on in this session — click to turn it off'
             : 'SupA is off in this session — click to turn it on',
+        // Matches the header's own utilities: no border, same height, quiet
+        // text. The 6px dot is the only thing that carries the state.
         style: {
-          display: 'flex',
+          display: 'inline-flex',
           alignItems: 'center',
           gap: 6,
           height: 26,
-          padding: '0 10px',
-          borderRadius: 13,
-          border: `1px solid ${enabled ? 'var(--dsw-alias-brand-primary, #4f46e5)' : 'var(--dsw-alias-border-l1, #d8dbe2)'}`,
-          background: enabled ? 'var(--dsw-alias-bg-layer-2, rgba(79,70,229,.10))' : 'transparent',
-          color: enabled ? 'var(--dsw-alias-brand-primary, #4f46e5)' : 'var(--dsw-alias-label-secondary, #6b7280)',
+          padding: '0 8px',
+          borderRadius: 8,
+          border: '1px solid transparent',
+          background: hover && !locked ? 'var(--dsw-alias-bg-layer-2, rgba(127,127,127,.12))' : 'transparent',
+          color: enabled ? 'var(--dsw-alias-label-primary, #1f2328)' : 'var(--dsw-alias-label-secondary, #6b7280)',
           fontSize: 12,
-          fontWeight: 500,
+          fontWeight: 400,
+          lineHeight: 1,
           cursor: locked ? 'default' : 'pointer',
           opacity: busy ? 0.6 : 1,
         },
@@ -758,7 +764,7 @@ window.__ModuleLoader__.load({
           width: 6,
           height: 6,
           borderRadius: '50%',
-          background: enabled ? 'currentColor' : 'var(--dsw-alias-state-idle-primary, #9aa0aa)',
+          background: enabled ? 'var(--dsw-alias-brand-primary, #4f46e5)' : 'var(--dsw-alias-state-idle-primary, #9aa0aa)',
         },
       }),
       'SupA')
