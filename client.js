@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: 'dsh-supa',
+  id: 'dsh-ladder-superagents',
   factory(require) {
     const React = require('react')
     const h = React.createElement
@@ -597,10 +597,10 @@ window.__ModuleLoader__.load({
       }, [state, tiers])
 
       if (error && !state) {
-        return h('div', { style: s.page }, h('div', { style: s.error }, `dsh-supa: ${error}`))
+        return h('div', { style: s.page }, h('div', { style: s.error }, `dsh-ladder-superagents: ${error}`))
       }
       if (!state) {
-        return h('div', { style: s.page }, h('div', { style: s.hint }, 'Loading dsh-supa…'))
+        return h('div', { style: s.page }, h('div', { style: s.hint }, 'Loading dsh-ladder-superagents…'))
       }
 
       return h('div', { style: s.page },
@@ -699,7 +699,7 @@ window.__ModuleLoader__.load({
           name: 'settings.section',
           id: 'supa',
           order: 25,
-          label: 'dsh-supa',
+          label: 'dsh-ladder-superagents',
         }, SupaSettings))
       },
     }

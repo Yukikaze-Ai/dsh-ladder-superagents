@@ -1,6 +1,6 @@
 - insert:
     - id: supa
-      name: 'dsh-supa'
+      name: 'dsh-ladder-superagents'
       config:
         enabled: true
         # Inherited: the plugin answers no approval by itself. Set true only if

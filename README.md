@@ -1,4 +1,4 @@
-# dsh-supa
+# dsh-ladder-superagents
 
 > **0.1 is Windows-only.** CLI discovery, `.cmd` launching and path handling are
 > written for Windows. On macOS and Linux the llm tiers work, the CLI tiers do
@@ -15,7 +15,7 @@ A DeepSeek Harness bundle that turns selected sessions in the profile into a **S
 session, following the concept of
 [`deepseek-ai/dsh-superagent-prototype`](https://github.com/deepseek-ai/dsh-superagent-prototype).
 
-Package id: `dsh-supa`.
+Package id: `dsh-ladder-superagents`.
 
 The prototype's idea, reduced to three properties per session:
 
@@ -92,7 +92,7 @@ Set on the `supa` row in the bundle's `cordis.patch.yml`:
 
 ## Install
 
-dsh-supa is a DeepSeek Harness **bundle**: a package whose `package.json`
+dsh-ladder-superagents is a DeepSeek Harness **bundle**: a package whose `package.json`
 declares `dsh.bundle.patch`. Installing it into a profile inserts its plugin
 row (Host half) and its Client half.
 
@@ -237,7 +237,7 @@ tier's `command` field.
 
 ## Settings page
 
-The bundle ships a Client half that registers a `dsh-supa` page in the
+The bundle ships a Client half that registers a `dsh-ladder-superagents` page in the
 Settings panel (`settings.section`, order 25). It shows the ladder of the
 selected workspace — position, label, route, ceiling, per-tier availability —
 and edits it in place: reorder with ↑/↓, enable/disable, remove, and add a tier
@@ -279,3 +279,4 @@ MIT — see [LICENSE](LICENSE).
   Add it to `.gitignore` if you do not want it committed.
 - The charter changes the behavior of *every* session in this profile,
   including existing ones.
+

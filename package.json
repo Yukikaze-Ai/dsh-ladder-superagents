@@ -1,5 +1,5 @@
 {
-  "name": "dsh-supa",
+  "name": "dsh-ladder-superagents",
   "version": "0.1.0",
   "type": "module",
   "description": "Tiered subagents for DeepSeek Harness: a ten-slot model ladder, difficulty routing, automatic fallback and real-call verification. Windows-only in 0.1.",
