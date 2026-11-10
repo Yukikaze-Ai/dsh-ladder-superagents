@@ -57,6 +57,9 @@ const DEFAULTS = {
   /** When a routed child stops on error/max-tokens/refusal, retry one tier weaker. */
   retryOnFailure: true,
   maxRouteRetries: 2,
+  /** Same-tier attempts before a failing route is marked and its slot freed. */
+  tierAttempts: 2,
+  tierRetryDelayMs: 1200,
   /** How long a tier stays out of rotation after a failed attempt. */
   failureCooldownMs: 30 * 60 * 1000,
   /** External CLI tiers: executable override, run limit, result cap. */
@@ -2131,9 +2134,26 @@ export function apply(ctx, config) {
         }
       }
 
+      const tierTries = new Map()
+
       const onFailure = (tier, attempt, stop) => {
-        // Mark the tier and take it out of rotation whatever happens next: the
-        // failure is a fact about the model, not about this retry decision.
+        const key = tier?.id ?? '__inherited__'
+        const tries = (tierTries.get(key) ?? 0) + 1
+        tierTries.set(key, tries)
+
+        // One wobble should not retire a model: retry the same tier first.
+        if (tier && tries < cfg.tierAttempts) {
+          enqueueParentNote(`T${tier.slot} ${tier.label} stopped with ${stop}; retrying the same tier (${tries + 1}/${cfg.tierAttempts})`, 'retry')
+          later(() => {
+            launch(tier, attempt).catch((error) => {
+              enqueueParentNote(`retry of ${tier.label} could not start: ${error?.message ?? error}`, 'retry')
+            })
+          }, cfg.tierRetryDelayMs)
+          return
+        }
+
+        // Out of same-tier attempts: the route is a fact about the model, so
+        // mark it and free the slot.
         if (tier?.id) {
           recordFailure(cwd, cfg, [`route:${tierRoute(tier)}`], stop).catch(() => {})
           removeFailedTier(cwd, cfg, tier.id).catch(() => {})
@@ -2145,7 +2165,7 @@ export function apply(ctx, config) {
           enqueueParentNote(`tier ${tier?.label ?? 'inherited'} stopped with ${stop}; no weaker tier left after ${attempt} retries`, 'retry')
           return
         }
-        enqueueParentNote(`tier ${tier.label} stopped with ${stop}; retrying on ${next.label}`, 'retry')
+        enqueueParentNote(`tier ${tier.label} stopped with ${stop} after ${tries} attempt(s); retrying on ${next.label}`, 'retry')
         launch(next, attempt + 1).catch((error) => {
           enqueueParentNote(`retry on ${next.label} could not start: ${error?.message ?? error}`, 'retry')
         })
@@ -2230,16 +2250,16 @@ export function apply(ctx, config) {
         return { kind: 'cli', cliId }
       }
 
-      const launch = async (tier, attempt) => {
+      const launch = async (tier, attempt, first = false) => {
         if (isCliTier(tier)) return launchCli(tier, attempt)
 
         const request = { ...baseRequest }
         if (tier) request.agentOptions = routeOptions(tier)
         const activation = await subagents.startActivation({
           provider: cfg.spawnProvider || 'spawn',
-          label: attempt === 0 ? label : `${label} (retry ${attempt})`,
+          label: first ? label : `${label} (retry ${attempt})`,
           request,
-          signal: attempt === 0 ? exec.signal : retrySignal,
+          signal: first ? exec.signal : retrySignal,
           delivery: 'parent',
         })
         grants.set(String(activation.childId), authority)
@@ -2256,7 +2276,7 @@ export function apply(ctx, config) {
         return { kind: 'session', ...activation }
       }
 
-      const activation = await launch(choseTier, 0)
+      const activation = await launch(choseTier, 0, true)
 
       sections.push(`context: ${chosen.join(', ')}`)
       return {

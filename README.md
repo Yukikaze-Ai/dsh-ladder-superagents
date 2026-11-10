@@ -67,6 +67,8 @@ Set on the `supa` row in the bundle's `cordis.patch.yml`:
 | `childPreset` | `''` | Agent preset for children; empty inherits the parent |
 | `retryOnFailure` | `true` | Re-spawn one tier weaker when a routed child stops on error/max-tokens/refusal |
 | `maxRouteRetries` | `2` | Stop descending after this many retries |
+| `tierAttempts` | `2` | Attempts on the same tier before it is marked and its slot freed |
+| `tierRetryDelayMs` | `1200` | Pause before retrying the same tier |
 | `codexCommand` | `''` | Absolute path to the codex CLI; empty discovers `~/.codex/plugins/*/codex.exe` then `~/.cargo/bin/codex.exe` |
 | `cliTimeoutMs` | `900000` | Kill a codex run after this long |
 | `maxCliResultChars` | `8000` | Cap on the result queued back to the parent |
@@ -156,13 +158,13 @@ The SupA scores a task 1-10; `supa_spawn` with `difficulty: 7` picks the tier.
 - Availability is the live `llm` service (`resolveCallConfig`, cached 60s), so
   an unavailable tier is skipped and the next one down is used — the
   "degrade one step at a time" rule.
-- A failed attempt marks its tier in `.dsh-supa/failures.json` for
-  `failureCooldownMs` (30 min by default). The router skips a cooling tier, so
-  the next task routes one step down instead of retrying a model that is known
-  to be down. The mark shows as `COOLING DOWN: <error>` in `supa_models list`
-  and on the settings page, where **Clear** removes it early. If every tier is
-  cooling, the strongest enabled tier is used rather than silently falling back
-  to the parent route.
+- A failed attempt retries the **same tier** once (`tierAttempts`) before it is
+  treated as a model problem: then the route is marked in
+  `.dsh-supa/failures.json`, the tier leaves the ladder, and the next attempt
+  walks down to the next tier. The mark shows as `COOLING DOWN` /
+  `Failed routes` and in the catalog row, where **Clear** removes it. If every
+  tier is cooling, the strongest enabled tier is used rather than silently
+  falling back to the parent route.
 - An empty ladder means children inherit the parent route, unchanged.
 - A tier may be an external CLI instead of a Harness route: `kind: "codex"`
   runs `codex exec` as a child process, feeds the same context pack on stdin,
