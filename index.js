@@ -101,6 +101,7 @@ const CHARTER = [
   '3. Decide what your children know. `supa_spawn` gives a child only the brief and the context you select; it sees nothing else of this conversation. Choose the smallest context that makes the child succeed, then let it pull more with `supa_context_request`. Do not paste the whole conversation by default.',
   '',
   'Route work by difficulty. Rate a task 1-10 (1 = a 4B model can do it, 10 = contradictory or missing information needing judgment) and pass `difficulty` to `supa_spawn`: the ladder picks the weakest tier that still covers the score, and degrades to the strongest available tier when nothing covers it. `supa_models list` shows the ladder and the routes the runtime actually advertises.',
+  'Delegate execution, not only research. A command sequence, a build, a test run, or a multi-file change belongs in a child: spawn it, keep working on something else, then drain `supa_inbox` and pick what matters. Keep in your own hands only the quick single step whose result you need in the same breath, and the decisions about what to do next.',
   'Work style: act, do not ask. If a tool fails, change approach rather than waiting. End a turn only when the work is done, when you are waiting on a child that will wake you, or when the remaining choice is irreversible.',
 ].join('\n')
 
@@ -110,6 +111,7 @@ const CHILD_CHARTER = [
   '- If you need more, call `supa_context_request` with the exact question and why. Your parent may answer in a later message; do not sit idle waiting for it — keep working on what you can.',
   '- Do not ask a human. Decide, record assumptions with `supa_context`, and finish.',
   '- You have no peers. Do not try to reach a sibling session; your only channel upward is `supa_report`, which enqueues into your parent\'s inbound queue without interrupting it. Use it for progress and for the final result; do not expect an immediate answer.',
+  '- **Your last act must be a `supa_report` carrying the result** — what you did, what you found, what your parent should do next. A child that ends without reporting leaves its parent holding a bare stop reason.',
   '- End with a compact result: what you did, what you found, and what your parent should do next.',
 ].join('\n')
 
@@ -2257,7 +2259,8 @@ export function apply(ctx, config) {
       },
       render: (_args, value) => textBlocks(
         `${value?.kind === 'cli' ? `started ${value?.cliId}` : `started SupA child ${value?.subagentId}`}`
-        + ` on ${value?.model ?? 'inherited route'} with a ${value?.packBytes ?? 0}-byte context pack (${value?.sections ?? ''})`,
+        + ` on ${value?.model ?? 'inherited route'} with a ${value?.packBytes ?? 0}-byte context pack (${value?.sections ?? ''})`
+        + '. Its result arrives in your inbound queue — drain it with `supa_inbox` when you are ready to pick.',
       ),
     },
     isConcurrencySafe: () => true,
