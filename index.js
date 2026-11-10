@@ -1212,6 +1212,7 @@ export function apply(ctx, config) {
       const ladder = await readLadder(file)
 
       if (args.action === 'add') {
+        if (ladder.tiers.length >= 10) throw new Error('the ladder holds at most 10 tiers; remove one first')
         const tier = normalizeTier({
           label: args.label,
           kind: args.kind,
@@ -1449,6 +1450,7 @@ export function apply(ctx, config) {
       ladder.tiers = ladder.tiers.filter((entry) => entry.id !== tierId)
       if (ladder.tiers.length === before) throw new Error(`no tier ${tierId}`)
     } else if (body?.action === 'add') {
+      if (ladder.tiers.length >= 10) throw new Error('the ladder holds at most 10 tiers; remove one first')
       const tier = normalizeTier(body.tier ?? {}, ladder.tiers.length)
       const taken = new Set(ladder.tiers.map((entry) => entry.id))
       if (taken.has(tier.id)) {

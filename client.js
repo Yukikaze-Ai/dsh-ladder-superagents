@@ -38,6 +38,27 @@ window.__ModuleLoader__.load({
         color: text,
         minWidth: 0,
       },
+      iconButton: {
+        fontSize: 12,
+        lineHeight: '20px',
+        width: 22,
+        padding: 0,
+        borderRadius: 6,
+        border,
+        background: 'transparent',
+        color: text,
+        cursor: 'pointer',
+      },
+      smallButton: {
+        fontSize: 11,
+        lineHeight: '20px',
+        padding: '0 6px',
+        borderRadius: 6,
+        border,
+        background: 'transparent',
+        color: text,
+        cursor: 'pointer',
+      },
       row: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
       dot: (on) => ({
         display: 'inline-block',
@@ -99,17 +120,17 @@ window.__ModuleLoader__.load({
               ? `failed: ${String(tier.failure.error || '').slice(0, 70)}`
               : tier.enabled ? (tier.available ? 'usable' : 'missing binary') : 'disabled')),
         h(Cell, null,
-          h('div', { style: styles.row },
-            h('button', { style: styles.button, onClick: () => move(index - 1), disabled: index === 0, title: 'Move up' }, '↑'),
-            h('button', { style: styles.button, onClick: () => move(index + 1), disabled: index === count - 1, title: 'Move down' }, '↓'),
-            h('button', { style: styles.button, onClick: toggle }, tier.enabled ? 'Disable' : 'Enable'),
+          h('div', { style: { display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'nowrap' } },
+            h('button', { style: styles.iconButton, onClick: () => move(index - 1), disabled: index === 0, title: 'Move up' }, '↑'),
+            h('button', { style: styles.iconButton, onClick: () => move(index + 1), disabled: index === count - 1, title: 'Move down' }, '↓'),
+            h('button', { style: styles.smallButton, onClick: toggle, title: tier.enabled ? 'Disable this tier' : 'Enable this tier' }, tier.enabled ? 'Off' : 'On'),
             tier.failure
-              ? h('button', { style: styles.button, onClick: () => onAction({ action: 'clear', id: tier.id }) }, 'Clear')
+              ? h('button', { style: styles.smallButton, onClick: () => onAction({ action: 'clear', id: tier.id }), title: 'Clear the failure mark' }, 'Clear')
               : null,
-            h('button', { style: styles.button, onClick: () => onAction({ action: 'remove', id: tier.id }) }, 'Remove'))))
+            h('button', { style: styles.smallButton, onClick: () => onAction({ action: 'remove', id: tier.id }), title: 'Remove this tier' }, '✕'))))
     }
 
-    function AddForm({ drivers, onAdd }) {
+    function AddForm({ drivers, onAdd, disabled }) {
       const [kind, setKind] = useState('llm')
       const [label, setLabel] = useState('')
       const [provider, setProvider] = useState('')
@@ -143,7 +164,8 @@ window.__ModuleLoader__.load({
       }
 
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 } },
-        h('div', { style: { fontSize: 12, color: muted } }, 'Add a tier at the weakest end'),
+        h('div', { style: { fontSize: 12, color: muted } },
+          disabled ? 'The ladder already holds 10 tiers — remove one to add another.' : 'Add a tier at the weakest end'),
         h('div', { style: styles.row },
           h('select', { style: styles.input, value: kind, onChange: (event) => setKind(event.target.value) },
             h('option', { value: 'llm' }, 'llm'),
@@ -156,7 +178,7 @@ window.__ModuleLoader__.load({
           h('input', { style: styles.input, placeholder: 'effort', value: effort, onChange: (event) => setEffort(event.target.value) }),
           h('input', { style: { ...styles.input, width: 64 }, placeholder: 'ceiling', value: ceiling, onChange: (event) => setCeiling(event.target.value) }),
           h('input', { style: { ...styles.input, flex: 1, minWidth: 160 }, placeholder: 'label', value: label, onChange: (event) => setLabel(event.target.value) }),
-          h('button', { style: styles.button, onClick: submit }, 'Add')),
+          h('button', { style: styles.button, onClick: submit, disabled }, 'Add')),
         error ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-state-error, #c04040)' } }, error) : null)
     }
 
@@ -252,7 +274,7 @@ window.__ModuleLoader__.load({
       const summary = useMemo(() => {
         if (!state) return ''
         const usable = tiers.filter((tier) => tier.available && tier.enabled && !tier.failure).length
-        return `${usable}/${tiers.length} usable · autoApprove ${String(state.config.autoApprove)} · authority ${state.config.authority}`
+        return `${usable}/${tiers.length} usable · ${tiers.length}/10 tiers · autoApprove ${String(state.config.autoApprove)} · authority ${state.config.authority}`
       }, [state, tiers])
 
       if (error && !state) {
@@ -290,7 +312,7 @@ window.__ModuleLoader__.load({
                 setDragIndex,
               })))),
         h(Catalog, { catalog: state.catalog, llm: state.llm, busy, onScan: act, onPin: act }),
-        h(AddForm, { drivers: state.drivers, onAdd: act }),
+        h(AddForm, { drivers: state.drivers, onAdd: act, disabled: tiers.length >= 10 }),
         error ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-state-error, #c04040)' } }, error) : null,
         h('div', { style: styles.hint },
           'Row 1 is the strongest and higher numbers are weaker — drag a row by its handle to reorder. Difficulty is the other axis: a task scored 1–10 takes the weakest tier whose ceiling still covers it.'),
