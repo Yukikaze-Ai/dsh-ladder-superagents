@@ -277,6 +277,16 @@ MIT — see [LICENSE](LICENSE).
   ceiling is mapped onto codex's own `-s` flag, and that is the entire control.
 - The ledger lives in the workspace (`.dsh-supa/`) so it travels with the repo.
   Add it to `.gitignore` if you do not want it committed.
-- The charter changes the behavior of *every* session in this profile,
-  including existing ones.
+- The charter applies to every session in `mode: 'all'`. Use `mode: 'session'`
+  (the default) so a session opts in with `supa_session enable`.
+
+## Contributing
+
+Bugs and reproductions are the most useful contribution. Read
+[CONTRIBUTING.md](CONTRIBUTING.md) for the local loop and the rules this
+codebase learned the hard way, then pick something from
+[ROADMAP.md](ROADMAP.md) — the Windows-only port and the routing tests are both
+marked `good first issue`.
+
+Release notes live in [CHANGELOG.md](CHANGELOG.md).
 
