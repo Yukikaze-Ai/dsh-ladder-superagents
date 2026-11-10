@@ -1700,6 +1700,7 @@ export function apply(ctx, config) {
     if (body?.action === 'config') {
       const changes = {}
       if (typeof body.autoApprove === 'boolean') changes.autoApprove = body.autoApprove
+      if (['all', 'root', 'preset', 'session'].includes(body.mode)) changes.mode = body.mode
       if (body.authority === 'workspace' || body.authority === 'full') changes.authority = body.authority
       if (typeof body.denyBlockingQuestions === 'boolean') changes.denyBlockingQuestions = body.denyBlockingQuestions
       const minutes = Number(body.failureCooldownMinutes)
