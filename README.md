@@ -23,7 +23,7 @@ The prototype's idea, reduced to three properties per session:
 
 | Property | Prototype mechanism | This plugin |
 | --- | --- | --- |
-| **Never blocked** | The router decides; Executors report instead of waiting | Approvals are decided in-process, the charter makes asking a last resort rather than a first move, a `blocked` turn wakes itself again |
+| **Never blocked** | The router decides; Executors report instead of waiting | Approvals are decided in-process; a broken thing is diagnosed and repaired before anyone is asked; asking is reserved for what a repair cannot obtain (a credential, a payment, a decision on something irreversible)
 | **Owns all context** | Ticket records, scoped `orchestrator_read` | A workspace ledger (`.dsh-supa/context.jsonl`) every session can read/write, injected as a live digest into the system prompt |
 | **Decides the child's context** | Mandate + scoped Inputs handed to an Executor | `supa_spawn` builds a context pack from the parent's selection; the child pulls more with `supa_context_request` and the parent answers with `supa_context_supply` |
 
