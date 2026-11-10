@@ -843,7 +843,10 @@ window.__ModuleLoader__.load({
       h('span', { style: s.meta }, `invoked ${row.started}`),
       h('span', { style: { ...s.meta, color: color.ok } }, `done ${row.done}`),
       h('span', { style: { ...s.meta, color: row.failed ? color.bad : color.muted } }, `failed ${row.failed}`),
-      h('span', { style: s.meta }, `avg ${row.avgMs}ms`)))
+      h('span', { style: s.meta }, `avg ${row.avgMs}ms`),
+      h('span', { style: s.meta }, row.inputTokens || row.outputTokens
+        ? `${row.inputTokens}/${row.outputTokens} tok`
+        : '')))
 
       const recentRows = (records) => records.map((record, index) => h('div', {
         key: `${record.at}-${index}`,

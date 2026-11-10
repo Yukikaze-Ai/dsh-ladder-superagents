@@ -523,6 +523,21 @@ function readUsage(limit = 2000) {
   }
 }
 
+/** Pull the last turn's token usage out of codex's JSONL event stream. */
+function tokensFromJsonl(stdout) {
+  let usage = null
+  for (const line of String(stdout ?? '').split('\n')) {
+    if (!line.includes('"usage"')) continue
+    try {
+      const event = JSON.parse(line)
+      if (event?.usage && typeof event.usage === 'object') usage = event.usage
+    } catch {
+      // not a JSON line
+    }
+  }
+  return usage
+}
+
 /** Aggregate the usage log once, for both `supa_stats` and the Stats view. */
 function summarizeUsage(records) {
   const byRoute = new Map()
@@ -536,6 +551,8 @@ function summarizeUsage(records) {
     if (record.kind === 'done') entry.done += 1
     if (record.kind === 'failed') entry.failed += 1
     if (Number(record.ms)) entry.ms.push(Number(record.ms))
+    entry.inputTokens = (entry.inputTokens ?? 0) + (Number(record.inputTokens) || 0)
+    entry.outputTokens = (entry.outputTokens ?? 0) + (Number(record.outputTokens) || 0)
     if (!entry.slot && record.slot) entry.slot = record.slot
     byRoute.set(key, entry)
   }
@@ -548,6 +565,8 @@ function summarizeUsage(records) {
       done: entry.done,
       failed: entry.failed,
       avgMs: entry.ms.length ? Math.round(entry.ms.reduce((sum, value) => sum + value, 0) / entry.ms.length) : 0,
+      inputTokens: entry.inputTokens ?? 0,
+      outputTokens: entry.outputTokens ?? 0,
       tasks: entry.tasks.slice(-3),
     }))
   return { records: records.length, summary, recent: records.slice(-40).reverse() }
@@ -832,6 +851,8 @@ const CLI_DRIVERS = {
       const args = ['exec']
       if (cfg.codexEphemeral) args.push('--ephemeral')
       args.push('--skip-git-repo-check', '-C', cwd, '--color', 'never', '-o', outFile)
+      // JSONL events carry the turn's token usage; -o still writes the message.
+      args.push('--json')
       if (model) args.push('-m', model)
       if (effort) args.push('-c', `model_reasoning_effort=${effort}`)
       args.push('-s', 'workspace-write', '-')
@@ -1521,7 +1542,10 @@ export function apply(ctx, config) {
 
       const lines = summary.map((entry) => {
         const tasks = entry.tasks.map((task) => task.slice(0, 24)).join(' | ')
-        return `T${entry.slot ?? '?'} ${entry.route}: started ${entry.started}, done ${entry.done}, failed ${entry.failed}, avg ${entry.avgMs}ms${tasks ? ` · ${tasks}` : ''}`
+        const tokens = entry.inputTokens || entry.outputTokens
+          ? `, tokens ${entry.inputTokens} in / ${entry.outputTokens} out`
+          : ''
+        return `T${entry.slot ?? '?'} ${entry.route}: started ${entry.started}, done ${entry.done}, failed ${entry.failed}, avg ${entry.avgMs}ms${tokens}${tasks ? ` · ${tasks}` : ''}`
       })
       return [`usage records: ${records.length} (${usageFileOf()})`, ...lines].join('\n')
     },
@@ -2899,6 +2923,7 @@ export function apply(ctx, config) {
           attempt,
         })
         result.then((text) => {
+          const tokens = tokensFromJsonl(stdout)
           recordUsage({
             kind: 'done',
             child: cliId,
@@ -2908,6 +2933,14 @@ export function apply(ctx, config) {
             route: tierRoute(tier),
             ms: Date.now() - cliStartedAt,
             stop: 'completed',
+            ...(tokens
+              ? {
+                inputTokens: Number(tokens.input_tokens) || 0,
+                cachedInputTokens: Number(tokens.cached_input_tokens) || 0,
+                outputTokens: Number(tokens.output_tokens) || 0,
+                reasoningTokens: Number(tokens.reasoning_output_tokens) || 0,
+              }
+              : {}),
           })
           const clipped = text.length > cfg.maxCliResultChars
             ? `${text.slice(0, cfg.maxCliResultChars)}\n… (${text.length} chars total)`
