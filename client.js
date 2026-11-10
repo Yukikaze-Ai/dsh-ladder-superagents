@@ -230,7 +230,7 @@ window.__ModuleLoader__.load({
               style: s.btn,
               onClick: () => run('scan', { action: 'scan' }),
               disabled: busyNow,
-            }, 'Scan'),
+            }, t('Scan')),
             h('button', {
               style: canPinTiers ? s.btn : { ...s.btn, opacity: 0.4 },
               onClick: () => setConfirming({
@@ -249,8 +249,8 @@ window.__ModuleLoader__.load({
           : catalog
             ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
               h('div', { style: s.hint },
-                `${catalog.models.length} models · scanned ${scanned} · `
-                + `${allModels.filter(verified).length} verified usable`),
+                `${catalog.models.length} ${t('models')} · ${t('scanned')} ${scanned} · `
+                + `${allModels.filter(verified).length} ${t('verified usable')}`),
               h('div', { style: { display: 'flex', gap: 14, alignItems: 'center', fontSize: 11, color: color.muted } },
                 h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(true) }), t('pinned usable')),
                 h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: { ...s.dot(true), background: color.warn } }), t('scanned only')),
@@ -892,6 +892,10 @@ window.__ModuleLoader__.load({
       'Pin tiers': '验证档位',
       'Loading dsh-ladder-superagents…': '正在加载 dsh-ladder-superagents…',
       'Pin': '测试',
+      'Scan': '扫描',
+      'models': '个模型',
+      'scanned': '扫描于',
+      'verified usable': '个已验证可用',
       'verified only': '只看已验证',
       'scanned only': '仅扫描',
       'pin failed': '验证失败',
