@@ -626,15 +626,6 @@ window.__ModuleLoader__.load({
             }, resetting ? 'Sure?' : 'Reset'),
             h('button', { style: s.btn, onClick: () => load(cwd), disabled: busy }, 'Refresh'))),
 
-        state.circuit?.open
-          ? h('div', { style: s.card },
-            h('div', { style: s.sectionTitle }, 'All routes are down — SupA is sleeping'),
-            h('div', { style: s.hint }, 'The built-in DeepSeek fallback failed too, so the circuit opened: children are not launched instead of burning attempts on dead providers.'),
-            h('div', { style: { fontSize: 12, color: color.bad, lineHeight: 1.5 } }, String(state.circuit.error ?? '').slice(0, 200)),
-            h('div', { style: s.actions },
-              h('button', { style: s.btn, onClick: () => act({ action: 'wake' }) }, 'Reset circuit')))
-          : null,
-
         h('div', { style: s.section },
           ...Array.from({ length: 10 }, (_, offset) => {
             const slot = offset + 1

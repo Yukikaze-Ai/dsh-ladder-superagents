@@ -292,18 +292,6 @@ async function dropTier(cwd, cfg, tierId) {
   await writeLadder(modelsFileOf(), ladder)
 }
 
-const CIRCUIT_KEY = 'circuit:open'
-
-/** The circuit is open when the built-in fallback itself failed: nothing left. */
-function circuitOpenState(cwd, cfg) {
-  const entry = readFailures(cwd, cfg)[CIRCUIT_KEY]
-  return failureActive(entry, cfg) ? entry : null
-}
-
-async function openCircuit(cwd, cfg, reason) {
-  await recordFailure(cwd, cfg, [CIRCUIT_KEY], reason)
-}
-
 const FALLBACK_TIER = {
   label: 'DeepSeek Flash (high)',
   kind: 'llm',
@@ -1702,12 +1690,6 @@ export function apply(ctx, config) {
           error: String(entry.error ?? ''),
           at: Number(entry.at) || 0,
         })),
-      circuit: (() => {
-        const entry = circuitOpenState(cwd, cfg)
-        return entry
-          ? { open: true, error: String(entry.error ?? ''), at: Number(entry.at) || 0 }
-          : { open: false }
-      })(),
     }
   }
 
@@ -1778,14 +1760,6 @@ export function apply(ctx, config) {
       await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(all, null, 2)}\n`, 'utf8')
       await writeLadder(modelsFileOf(), ladder)
       return { ...(await settingsState(cwd)), retry: { ok: Boolean(verdict.ok), error: verdict.error ?? '' } }
-    }
-
-    if (body?.action === 'wake') {
-      const all = readFailures(cwd, cfg)
-      delete all[CIRCUIT_KEY]
-      await mkdir(stateDirOf(), { recursive: true })
-      await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(all, null, 2)}\n`, 'utf8')
-      return settingsState(cwd)
     }
 
     if (body?.action === 'clear') {
@@ -2202,11 +2176,6 @@ export function apply(ctx, config) {
       const cwd = sessionCwd(ctx, session)
       const file = ledgerFileOf(cwd, cfg)
       const sections = []
-
-      // Open circuit: every route, including the built-in fallback, is down.
-      if (circuitOpenState(cwd, cfg)) {
-        throw new Error('every route is down, including the built-in DeepSeek fallback: SupA is sleeping. Fix a provider, then reset the circuit on the settings page.')
-      }
       const parts = []
       const label = String(args.label ?? '').trim() || 'SupA child'
 
@@ -2366,10 +2335,10 @@ export function apply(ctx, config) {
           recordFailure(cwd, cfg, [`route:${tierRoute(tier)}`], stop, tier).catch(() => {})
           const isFallback = tier.id === 'fallback' || String(tier.id).startsWith('fallback-')
           if (isFallback) {
-            // The last line failed too: stop burning attempts and sleep.
-            openCircuit(cwd, cfg, `the built-in fallback ${tierRoute(tier)} failed: ${stop}`).catch(() => {})
+            // The last line failed too. Fail loudly and leave the state alone:
+            // the user decides whether to retry now or start a new session.
             dropTier(cwd, cfg, tier.id).catch(() => {})
-            enqueueParentNote('the built-in DeepSeek fallback failed as well: the circuit is open and SupA is sleeping until it is reset', 'retry')
+            enqueueParentNote('the built-in DeepSeek fallback failed as well: every route in the ladder is down, so this assignment cannot be retried until a provider recovers', 'retry')
             return
           }
           dropTier(cwd, cfg, tier.id)
