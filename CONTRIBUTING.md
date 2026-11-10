@@ -85,7 +85,9 @@ Follow these or the bug comes back:
 
 ## Test it by hand
 
-There is no test runner yet (see ROADMAP item 2). What to do instead:
+There is a small test suite for the pure logic: `npm test` runs `node --test` with no
+dependencies and covers the routing decision (`test/routing.test.js`). What still
+needs a hand:
 
 - **Normal path**: open Settings → `dsh-ladder-superagents`, add a tier, drag it,
   disable it, remove it.

@@ -486,6 +486,12 @@ async function writeEnabledSessions(list) {
   await writeFile(sessionsFileOf(), `${JSON.stringify({ version: 1, enabled: bounded }, null, 2)}\n`, 'utf8')
 }
 
+/** Whether the ladder defines an enabled T1. Without it there is no SupA. */
+async function ladderHasTop() {
+  const ladder = await readLadder(modelsFileOf())
+  return ladder.tiers.some((tier) => tier.slot === 1 && tier.enabled !== false)
+}
+
 function usageFileOf() {
   return join(stateDirOf(), 'usage.jsonl')
 }
@@ -623,8 +629,25 @@ async function readLadder(file) {
 }
 
 /** One rule for "how strong is this slot", used everywhere. */
-function ceilingOf(slot) {
+export function ceilingOf(slot) {
   return Math.min(10, Math.max(1, 11 - slot))
+}
+
+/**
+ * Pure routing decision: given the usable tiers (sorted by slot, strongest
+ * first) and a difficulty, pick the tier and the fallback chain. Exported so it
+ * can be tested without a running Harness.
+ */
+export function chooseTier(healthy, difficulty) {
+  if (!Array.isArray(healthy) || healthy.length === 0) return { pick: null, chain: [], desired: 0, degraded: false }
+  const desired = Math.min(10, Math.max(1, 11 - Math.round(Number(difficulty) || 1)))
+  // A tier at slot s covers every difficulty up to its ceiling (11 - s), so the
+  // tiers that can do this task are the ones with slot <= desired: the weakest
+  // of them wins. A hole is covered by the stronger tier above it.
+  const covers = healthy.filter((tier) => tier.slot <= desired)
+  const pick = covers.length > 0 ? covers[covers.length - 1] : healthy[0]
+  const chain = healthy.filter((tier) => tier.slot >= pick.slot)
+  return { pick, chain, desired, degraded: pick.slot !== desired }
 }
 
 async function writeLadder(file, ladder) {
@@ -1238,7 +1261,7 @@ export function apply(ctx, config) {
   const handedOff = new Map()
   const HAND_OFF_DEDUPE_MS = 60_000
 
-  const handOffCommand = (agent, command, what = 'a blocking command', workdir = '') => {
+  const handOffCommand = (agent, command, what = 'a blocking command', workdir = '', signal) => {
     const subagents = ctx.get?.('subagents')
     if (!subagents || !agent) return 'unavailable'
 
@@ -1277,6 +1300,8 @@ export function apply(ctx, config) {
       provider: cfg.spawnProvider || 'spawn',
       label: 'handed-off command',
       request,
+      // startActivation calls throwIfAborted on this, so it must be a signal.
+      signal: signal ?? new AbortController().signal,
       delivery: 'parent',
     }).catch((error) => {
       // The command never started. Say so in the queue instead of leaving the
@@ -1308,10 +1333,15 @@ export function apply(ctx, config) {
 
   const SLEEP_PATTERN = /\b(?:sleep\s+(\d+(?:\.\d+)?)|Start-Sleep\s+(?:-Seconds\s+)?(\d+(?:\.\d+)?)|timeout\s+\/t\s+(\d+))\b/gi
   const POLL_LOOP = /\b(?:while|until|for)\b[\s\S]{0,200}?\b(?:sleep|Start-Sleep)\b/i
-  // Commands that almost never finish inside a turn. Kept narrow on purpose:
-  // `git push` or `curl` finish in a second, and handing those off only adds a
-  // child turn to every commit.
-  const LONG_COMMAND = /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:install|i|add|run|test|build|publish)|(?:pip|uv|poetry)\s+(?:install|add|sync)|(?:cargo|dotnet|msbuild|gradle|mvn)\s+(?:build|test|run|publish|restore)|(?:go|make|cmake)\s+(?:build|test|install|all)|pytest|tox|jest|vitest|playwright|cypress|docker\s|git\s+clone)\b/i
+  // Commands that almost never finish inside a turn. Anchored at the start of a
+  // statement, so the words inside a quoted argument (`git commit -m "npm test"`)
+  // do not count.
+  const LONG_COMMAND = /^(?:(?:npm|pnpm|yarn|bun)\s+(?:install|i|add|run|test|build|publish)|(?:pip|uv|poetry)\s+(?:install|add|sync)|(?:cargo|dotnet|msbuild|gradle|mvn)\s+(?:build|test|run|publish|restore)|(?:go|make|cmake)\s+(?:build|test|install|all)|pytest|tox|jest|vitest|playwright|cypress|docker\s|git\s+clone)\b/i
+  const statementsOf = (command) => command
+    .split(/[;\n]|&&|\|\|/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  const looksLong = (command) => statementsOf(command).some((part) => LONG_COMMAND.test(part))
   ctx.effect(() => ctx.tools.guard((execution) => {
     if (!execution || !isSupa(execution.agent)) return undefined
     if (execution.name !== 'pwsh' && execution.name !== 'bash') return undefined
@@ -1335,12 +1365,12 @@ export function apply(ctx, config) {
       what = looping ? 'polling in a loop' : `sleeping about ${Math.round(total)}s`
     } else if (cfg.handOffShell === 'all') {
       what = 'a shell command'
-    } else if (cfg.handOffShell !== 'blocking' && LONG_COMMAND.test(command)) {
+    } else if (cfg.handOffShell !== 'blocking' && looksLong(command)) {
       what = 'a long-running command'
     }
     if (!what) return undefined
 
-    const handed = handOffCommand(execution.agent, command, what, String(args.workdir ?? ''))
+    const handed = handOffCommand(execution.agent, command, what, String(args.workdir ?? ''), execution.signal)
     if (handed === 'full') {
       return `You already have ${cfg.maxChildren} workers running (maxChildren), so this command was not handed off either. `
         + 'Wait for one to report into `supa_inbox`, or run it with `run_in_background: true`.'
@@ -1419,6 +1449,11 @@ export function apply(ctx, config) {
       const id = agent.session?.id ? String(agent.session.id) : ''
       if (!id) throw new Error('this session has no id')
       let enabled = readEnabledSessions()
+      if (args.action === 'enable') {
+        if (!(await ladderHasTop())) {
+          throw new Error('the ladder has no T1. Define an enabled tier at T1 in Settings first: without a top tier there is nothing to route the hardest work to, so SupA stays off.')
+        }
+      }
       if (args.action === 'enable' && !enabled.includes(id)) enabled = [...enabled, id]
       if (args.action === 'disable') enabled = enabled.filter((entry) => entry !== id)
       if (args.action !== 'status') await writeEnabledSessions(enabled)
@@ -1701,11 +1736,8 @@ export function apply(ctx, config) {
     // the tiers that can do this task are the ones with slot <= desired. Pick
     // the weakest of them; a hole (T3 empty) is covered by the stronger tier
     // above it, not by a weaker one below.
-    const covers = healthy.filter((tier) => tier.slot <= desired)
-    const pick = covers.length > 0 ? covers[covers.length - 1] : healthy[0]
-    // Degrading means walking to weaker slots from the pick.
-    const chain = healthy.filter((tier) => tier.slot >= pick.slot)
-    return { tier: pick, degraded: pick.slot !== desired, usable: healthy.length, total: tiers.length, chain, desired }
+    const choice = chooseTier(healthy, difficulty)
+    return { tier: choice.pick, degraded: choice.degraded, usable: healthy.length, total: tiers.length, chain: choice.chain, desired: choice.desired }
   }
 
   const routeOptions = (tier) => ({
@@ -2072,6 +2104,7 @@ export function apply(ctx, config) {
           at: Number(entry.at) || 0,
         })),
       supaSessions: readEnabledSessions(),
+      ladderReady: ladder.tiers.some((tier) => tier.slot === 1 && tier.enabled !== false),
     }
   }
 
@@ -2580,6 +2613,11 @@ export function apply(ctx, config) {
       if (running >= cfg.maxChildren) {
         throw new Error(`this SupA already has ${running} children running (maxChildren: ${cfg.maxChildren}); `
           + 'wait for one to report into `supa_inbox`, or raise maxChildren in the plugin config')
+      }
+      // Routing needs a ceiling at the top; without T1 the hardest work would
+      // silently land on the weakest tier.
+      if (!(await ladderHasTop())) {
+        throw new Error('the ladder has no T1: define an enabled tier at slot 1 before spawning, or the hardest work has nowhere to go')
       }
       const sections = []
       const parts = []

@@ -625,6 +625,12 @@ window.__ModuleLoader__.load({
             }, resetting ? 'Sure?' : 'Reset'),
             h('button', { style: s.btn, onClick: () => load(cwd), disabled: busy }, 'Refresh'))),
 
+        state.ladderReady === false
+          ? h('div', { style: s.card },
+            h('div', { style: s.sectionTitle }, 'T1 是空的'),
+            h('div', { style: s.hint }, '没有 T1 就没有能接住最难任务的档位。此刻 SupA 无法启用，派活也会被拒绝；先在槽位 1 放一个模型。'))
+          : null,
+
         h('div', { style: s.section },
           ...Array.from({ length: 10 }, (_, offset) => {
             const slot = offset + 1

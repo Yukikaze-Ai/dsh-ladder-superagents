@@ -26,6 +26,9 @@
   "os": [
     "win32"
   ],
+  "scripts": {
+    "test": "node --test"
+  },
   "keywords": [
     "dsh",
     "deepseek-harness",

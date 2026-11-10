@@ -14,7 +14,7 @@ CLI discovery, `.cmd` launching and path handling assume Windows.
 Acceptance: a macOS or Linux user can install, add a `codex` tier, and run one
 spawn without editing code. Then drop the `os` field.
 
-## 2. Tests for the routing decisions — `good first issue`
+## 2. Tests for the routing decisions — started (`npm test`)
 
 There is no test runner. The rules worth locking down:
 
