@@ -210,23 +210,39 @@ window.__ModuleLoader__.load({
           : catalog
             ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
               h('div', { style: s.hint }, `${catalog.models.length} models · scanned ${scanned}`),
-              ...catalog.models.map((model) => h('div', {
-                key: model.slug,
-                style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
-              },
-              h('span', { style: { fontSize: 12, minWidth: 150, color: color.text } }, model.slug),
-              h('span', { style: s.chip }, model.visibility || '?'),
-              h('span', { style: { ...s.meta, flex: 1 } },
-                model.efforts.map((effort) => {
-                  const verdict = verdictOf(model.slug, effort)
-                  return `${effort}${verdict ? (verdict.ok ? ' ✓' : ' ✕') : ''}`
-                }).join('  ') || 'no efforts'),
-              h('button', {
-                style: s.btn,
-                onClick: () => run(`pin:${model.slug}`, { action: 'pin', model: model.slug }),
-                disabled: busyNow,
-                title: `Test every effort of ${model.slug} with a real call`,
-              }, 'Pin'))))
+              h('div', { style: { display: 'flex', gap: 14, alignItems: 'center', fontSize: 11, color: color.muted } },
+                h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(true) }), 'pinned usable'),
+                h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: { ...s.dot(true), background: color.warn } }), 'scanned only'),
+                h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(false) }), 'pin failed')),
+              ...catalog.models.map((model) => {
+                const verdicts = model.efforts.map((effort) => verdictOf(model.slug, effort)).filter(Boolean)
+                const status = verdicts.length === 0
+                  ? { color: color.warn, label: 'scanned, not pinned' }
+                  : verdicts.every((verdict) => verdict.ok)
+                    ? { color: color.ok, label: 'pinned usable' }
+                    : { color: color.bad, label: 'pin failed' }
+                return h('div', {
+                  key: model.slug,
+                  style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
+                },
+                h('span', {
+                  style: { width: 7, height: 7, borderRadius: '50%', background: status.color, flexShrink: 0 },
+                  title: status.label,
+                }),
+                h('span', { style: { fontSize: 12, minWidth: 150, color: color.text } }, model.slug),
+                h('span', { style: s.chip }, model.visibility || '?'),
+                h('span', { style: { ...s.meta, flex: 1 } },
+                  model.efforts.map((effort) => {
+                    const verdict = verdictOf(model.slug, effort)
+                    return `${effort}${verdict ? (verdict.ok ? ' ✓' : ' ✕') : ''}`
+                  }).join('  ') || 'no efforts'),
+                h('button', {
+                  style: s.btn,
+                  onClick: () => run(`pin:${model.slug}`, { action: 'pin', model: model.slug }),
+                  disabled: busyNow,
+                  title: `Test every effort of ${model.slug} with a real call`,
+                }, 'Pin'))
+              }))
             : h('div', { style: s.hint }, 'No catalog cached. Scan to read the model list.'),
         llm?.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 6 } },
