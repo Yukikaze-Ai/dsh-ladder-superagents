@@ -975,6 +975,8 @@ window.__ModuleLoader__.load({
       'hidden': '隐藏',
       'language': '界面语言',
       'auto': '自动',
+      'This session': '本会话',
+      'Whole profile': '全部会话',
       'Nothing verified yet. Uncheck verified only, then press Pin on a model - one real call proves it.': '还没有验证过任何模型。取消勾选"只看已验证"，然后点某个模型旁的"测试"——一次真实调用就能证明它可用。',
       'Saving rewrites this plugin row in the profile config, which restarts it for about a second.': '保存会改写 profile 里的插件行，插件重启约一秒。',
       'Which sessions run as SupA; opt-in needs supa_session enable once per session': '哪些会话作为 SupA 运行；按需启用需要每个会话执行一次 `supa_session enable`',
@@ -1024,24 +1026,29 @@ window.__ModuleLoader__.load({
       fontWeight: 500,
     }
 
-    function SupaStatsView() {
+    function SupaStatsView(props) {
       useLang()
+      const sessionId = String(props?.sessionId ?? '')
       const [stats, setStats] = useState(null)
       const [error, setError] = useState('')
       const [busy, setBusy] = useState(false)
       const [hours, setHours] = useState('24')
+      // The usage log is shared by the whole profile, so the view starts scoped
+      // to this session and offers the profile totals separately.
+      const [scope, setScope] = useState('session')
 
       const load = useCallback(async () => {
         setBusy(true)
         try {
-          setStats(await request(`/supa/stats?hours=${hours}`))
+          const scoped = scope === 'session' && sessionId ? `&session=${encodeURIComponent(sessionId)}` : ''
+          setStats(await request(`/supa/stats?hours=${hours}${scoped}`))
           setError('')
         } catch (failure) {
           setError(String(failure?.message ?? failure))
         } finally {
           setBusy(false)
         }
-      }, [hours])
+      }, [hours, scope, sessionId])
 
       useEffect(() => {
         load()
@@ -1167,6 +1174,19 @@ window.__ModuleLoader__.load({
             h('div', { style: s.title }, t('Model usage')),
             h('div', { style: s.sub }, `${windowLabel} · ${stats.records} ${t('records')} · ${t('done')} ${totalDone} · ${t('failed')} ${totalFailed}`)),
           h('div', { style: s.actions },
+            h('button', {
+              key: 'scope-session',
+              style: scope === 'session' ? segmentActive : segmentIdle,
+              disabled: busy,
+              onClick: () => setScope('session'),
+            }, t('This session')),
+            h('button', {
+              key: 'scope-all',
+              style: scope === 'all' ? segmentActive : segmentIdle,
+              disabled: busy,
+              onClick: () => setScope('all'),
+            }, t('Whole profile')),
+            h('span', { style: { width: 1, height: 16, background: 'var(--dsw-alias-border-l1, rgba(128,128,128,.3))' } }),
             ...SEGMENTS.map(([value, label]) => h('button', {
               key: value,
               style: hours === value ? segmentActive : segmentIdle,
@@ -1232,6 +1252,7 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
 
 

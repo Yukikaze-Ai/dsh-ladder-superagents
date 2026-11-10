@@ -537,6 +537,16 @@ function readUsage(limit = 2000) {
   }
 }
 
+/**
+ * Keep only the records one session produced. An empty id means every session,
+ * which is also what history recorded before sessions were written down.
+ */
+export function withinSession(records, sessionId) {
+  const id = String(sessionId ?? '')
+  if (!id) return records
+  return records.filter((record) => String(record.session ?? '') === id)
+}
+
 /** Keep only records from the last `hours`; a non-positive value means all. */
 export function withinHours(records, hours) {
   const span = Number(hours)
@@ -1558,6 +1568,11 @@ export function apply(ctx, config) {
         action: { type: 'string', enum: ['summary', 'recent'], description: '`summary` aggregates per tier; `recent` lists the latest calls.' },
         limit: { type: 'number', description: 'For `recent`: how many calls, 1-100 (default 20).' },
         hours: { type: 'number', description: 'Only count calls from the last N hours; 0 or omitted means everything.' },
+        scope: {
+          type: 'string',
+          enum: ['session', 'all'],
+          description: '`session` (default) counts only this session\'s calls; `all` counts every session in the profile.',
+        },
       },
       additionalProperties: false,
     },
@@ -1566,9 +1581,16 @@ export function apply(ctx, config) {
       render: (_args, value) => textBlocks(String(value ?? '')),
     },
     isConcurrencySafe: () => true,
-    async execute(args) {
-      const records = withinHours(readUsage(5000), Number(args.hours) || 0)
-      if (records.length === 0) return `no usage recorded in that window (${usageFileOf()})`
+    async execute(args, exec) {
+      const inWindow = withinHours(readUsage(5000), Number(args.hours) || 0)
+      // Default to this session: the file is shared by the whole profile.
+      const sessionId = args.scope === 'all' ? '' : String(exec?.agent?.session?.id ?? '')
+      const records = withinSession(inWindow, sessionId)
+      if (records.length === 0) {
+        return sessionId
+          ? 'no usage recorded for this session in that window (try scope: "all" for the whole profile)'
+          : `no usage recorded in that window (${usageFileOf()})`
+      }
       const { summary } = summarizeUsage(records)
 
       if (args.action === 'recent') {
@@ -2343,8 +2365,10 @@ export function apply(ctx, config) {
           kind: 'exact',
           path: '/supa/stats',
           resource: async (request) => {
-            const hours = Number(new URL(request.url).searchParams.get('hours'))
-            return jsonResponse(summarizeUsage(withinHours(readUsage(5000), hours)))
+            const params = new URL(request.url).searchParams
+            const hours = Number(params.get('hours'))
+            const session = String(params.get('session') ?? '')
+            return jsonResponse(summarizeUsage(withinSession(withinHours(readUsage(5000), hours), session)))
           },
         }),
         webServer.register({
@@ -3038,6 +3062,7 @@ export function apply(ctx, config) {
         recordUsage({
           kind: 'start',
           child: cliId,
+          session: String(session.id),
           task: label,
           difficulty: typeof args.difficulty === 'number' ? args.difficulty : null,
           tier: tier?.id ?? '',
@@ -3050,6 +3075,7 @@ export function apply(ctx, config) {
           recordUsage({
             kind: 'done',
             child: cliId,
+            session: String(session.id),
             task: label,
             tier: tier?.id ?? '',
             slot: tier?.slot ?? null,
@@ -3073,6 +3099,7 @@ export function apply(ctx, config) {
           recordUsage({
             kind: 'failed',
             child: cliId,
+            session: String(session.id),
             task: label,
             tier: tier?.id ?? '',
             slot: tier?.slot ?? null,
@@ -3103,6 +3130,7 @@ export function apply(ctx, config) {
         recordUsage({
           kind: 'start',
           child: String(activation.childId),
+          session: String(session.id),
           task: label,
           difficulty: typeof args.difficulty === 'number' ? args.difficulty : null,
           tier: tier?.id ?? '',
@@ -3117,6 +3145,7 @@ export function apply(ctx, config) {
             recordUsage({
               kind: stop === 'completed' ? 'done' : 'failed',
               child: String(activation.childId),
+              session: String(session.id),
               task: label,
               tier: tier?.id ?? '',
               slot: tier?.slot ?? null,
@@ -3130,6 +3159,7 @@ export function apply(ctx, config) {
             recordUsage({
               kind: 'failed',
               child: String(activation.childId),
+              session: String(session.id),
               task: label,
               tier: tier?.id ?? '',
               slot: tier?.slot ?? null,
@@ -3336,4 +3366,6 @@ export function apply(ctx, config) {
 
   log(`active (mode=${cfg.mode}, ledger=${cfg.ledgerDir}, autoApprove=${cfg.autoApprove})`)
 }
+
+
 
