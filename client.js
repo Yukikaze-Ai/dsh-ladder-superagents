@@ -157,7 +157,7 @@ window.__ModuleLoader__.load({
         h('span', { style: s.rank }, `T${tier.slot}`)),
       h('div', { style: s.body },
         h('div', { style: s.tierTitle }, tier.label),
-        h('div', { style: s.meta }, `${tier.route} · ${tier.id}`)),
+        h('div', { style: s.meta }, tier.route)),
       h('div', { style: s.state },
         h('span', { style: s.dot(tier.available && tier.enabled) }),
         h('span', null, tier.enabled ? (tier.available ? 'usable' : 'missing') : 'disabled')),

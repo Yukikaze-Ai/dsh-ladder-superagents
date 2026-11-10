@@ -288,6 +288,17 @@ async function disableTier(cwd, cfg, tierId) {
   await writeLadder(modelsFileOf(), ladder)
 }
 
+/** A removed tier takes its failure marks with it, so it can be added back. */
+async function forgetFailure(cwd, cfg, tier) {
+  if (!tier) return
+  const all = readFailures(cwd, cfg)
+  const keys = [tier.id, `route:${tierRoute(tier)}`]
+  if (!keys.some((key) => key in all)) return
+  for (const key of keys) delete all[key]
+  await mkdir(stateDirOf(), { recursive: true })
+  await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(all, null, 2)}\n`, 'utf8')
+}
+
 /**
  * Locate the Codex CLI. An external tier runs `codex exec` as a child process
  * instead of a Harness agent session, so its context is the pack on stdin and
@@ -1314,8 +1325,10 @@ export function apply(ctx, config) {
 
       if (args.action === 'remove') {
         const before = ladder.tiers.length
+        const removed = ladder.tiers.find((tier) => tier.id === args.id)
         ladder.tiers = ladder.tiers.filter((tier) => tier.id !== args.id)
         if (ladder.tiers.length === before) throw new Error(`no tier with id ${args.id}`)
+        await forgetFailure(cwd, cfg, removed)
         renumber(ladder.tiers)
         await writeLadder(file, ladder)
         return `removed ${args.id}\n${ladder.tiers.map(renderTier).join('\n') || '(ladder is empty)'}`
@@ -1553,8 +1566,10 @@ export function apply(ctx, config) {
       tier.enabled = body.enabled !== false
     } else if (body?.action === 'remove') {
       const before = ladder.tiers.length
+      const removed = ladder.tiers.find((entry) => entry.id === tierId)
       ladder.tiers = ladder.tiers.filter((entry) => entry.id !== tierId)
       if (ladder.tiers.length === before) throw new Error(`no tier ${tierId}`)
+      await forgetFailure(cwd, cfg, removed)
     } else if (body?.action === 'add') {
       const used = new Set(ladder.tiers.map((entry) => entry.slot))
       if (used.size >= 10) throw new Error('all ten slots are taken; remove one first')
