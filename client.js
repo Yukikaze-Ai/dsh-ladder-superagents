@@ -433,25 +433,25 @@ window.__ModuleLoader__.load({
               ...drivers.map((name) => h('option', { key: name, value: name }, name)))
             : h('input', {
               style: { ...s.input, width: 150 },
-              placeholder: 'provider',
+              placeholder: t('provider'),
               value: provider,
               onChange: (event) => setProvider(event.target.value),
             }),
           h('input', {
             style: { ...s.input, width: 150 },
-            placeholder: 'model',
+            placeholder: t('model'),
             value: model,
             onChange: (event) => setModel(event.target.value),
           }),
           h('input', {
             style: { ...s.input, width: 100 },
-            placeholder: 'effort',
+            placeholder: t('effort'),
             value: effort,
             onChange: (event) => setEffort(event.target.value),
           }),
           h('input', {
             style: { ...s.input, flex: 1, minWidth: 160 },
-            placeholder: 'label',
+            placeholder: t('label'),
             value: label,
             onChange: (event) => setLabel(event.target.value),
           }),
@@ -931,6 +931,10 @@ window.__ModuleLoader__.load({
       'auto approve hint': '请求当场批准，并记入账本',
       'all slots taken': '十个槽位都占了——先移除一个再加。',
       'added to free slot': '已放入第一个空槽位，之后可以拖动调整位置。',
+      'provider': '提供方',
+      'model': '模型',
+      'effort': '推理强度',
+      'label': '名称',
       'ladder explain': '阶梯共十个槽位：T1 最强，负责 10 分难度的任务；T10 最弱，负责 1 分难度。拖动左侧手柄可以改变槽位——槽位就是它的档位。',
     }
     const t = (english) => (LOCALE === 'zh' ? (ZH[english] ?? english) : english)
