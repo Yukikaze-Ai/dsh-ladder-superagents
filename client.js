@@ -257,7 +257,7 @@ window.__ModuleLoader__.load({
                 h('span', { style: { display: 'flex', gap: 5, alignItems: 'center' } }, h('span', { style: s.dot(false) }), t('pin failed'))),
               shownModels.length === 0
                 ? h('div', { style: s.hint }, verifiedOnly
-                  ? t('nothing verified hint')
+                  ? t('Nothing verified yet. Uncheck verified only, then press Pin on a model - one real call proves it.')
                   : 'The catalog is empty.')
                 : null,
               ...shownModels.map((model) => {
@@ -349,7 +349,7 @@ window.__ModuleLoader__.load({
             h('button', {
               style: s.btn,
               disabled: busyNow,
-              title: t('route no pin hint'),
+              title: t('This route needs no pin: the llm service already advertises it. Add it at its default effort.'),
               onClick: () => onAdd({
                 action: 'add',
                 tier: {
@@ -431,8 +431,8 @@ window.__ModuleLoader__.load({
       return h('div', { style: s.card },
         h('div', { style: s.sectionTitle }, t('Add a tier')),
         h('div', { style: s.hint }, disabled
-          ? t('all slots taken')
-          : t('added to free slot')),
+          ? t('All ten slots are taken - remove one to add another.')
+          : t('Added to the first free slot; drag it into place afterwards.')),
         h('div', { style: s.row },
           h('select', { style: s.input, value: kind, onChange: (event) => setKind(event.target.value) },
             h('option', { value: 'llm' }, 'llm'),
@@ -500,7 +500,7 @@ window.__ModuleLoader__.load({
 
       return h('div', { style: s.card },
         h('div', { style: s.sectionTitle }, t('Policy')),
-        h('div', { style: s.hint }, t('saving hint')),
+        h('div', { style: s.hint }, t('Saving rewrites this plugin row in the profile config, which restarts it for about a second.')),
         field(t('Session scope'),
           h('select', {
             style: control,
@@ -512,7 +512,7 @@ window.__ModuleLoader__.load({
           h('option', { value: 'all' }, t('every session')),
           h('option', { value: 'root' }, t('root sessions only')),
           h('option', { value: 'preset' }, t('by preset'))),
-          t('which sessions hint')),
+          t('Which sessions run as SupA; opt-in needs supa_session enable once per session')),
         field(t('Approvals'),
           h('button', {
             style: s.btn,
@@ -520,7 +520,7 @@ window.__ModuleLoader__.load({
             onClick: () => onConfig({ autoApprove: !config.autoApprove }),
           }, config.autoApprove ? t('decide in-process') : t('ask the user')),
           config.autoApprove
-            ? t('auto approve hint')
+            ? t('A request is granted once and audited in the ledger')
             : t('a request goes to the human through the approval prompt')),
         field(t('Authority ceiling'),
           h('select', {
@@ -692,7 +692,7 @@ window.__ModuleLoader__.load({
         state.ladderReady === false
           ? h('div', { style: s.card },
             h('div', { style: s.sectionTitle }, t('T1 is empty')),
-            h('div', { style: s.hint }, t('T1 is empty hint')))
+            h('div', { style: s.hint }, t('Without T1 there is no tier to catch the hardest task. SupA cannot be enabled and spawns are refused; put a model in slot 1 first.')))
           : null,
 
         h('div', { style: s.section },
@@ -757,7 +757,7 @@ window.__ModuleLoader__.load({
           }, t('Add a model manually')),
 
         error ? h('div', { style: s.error }, error) : null,
-        h('div', { style: s.hint }, t('ladder explain')),
+        h('div', { style: s.hint }, t('The ladder is ten slots: T1 is the strongest and covers a 10-point task, T10 the weakest and covers a 1-point task. Drag a tier by its handle to change its slot; the slot is its tier.')),
       )
     }
 
@@ -914,11 +914,11 @@ window.__ModuleLoader__.load({
       'records': '条记录',
       'done': '完成',
       'failed': '失败',
-      'loading usage…': '正在加载用量…',
-      'per tier hint': '还没有调用记录。派一次任务之后这里就会有。',
-      'timeline hint': '还没有已完成的调用。',
+      'Loading usage…': '正在加载用量…',
+      'No calls recorded yet. Delegate one task and it shows up here.': '还没有调用记录。派一次任务之后这里就会有。',
+      'No finished calls yet.': '还没有已完成的调用。',
       'T1 is empty': 'T1 是空的',
-      'T1 is empty hint': '没有 T1 就没有能接住最难任务的档位。此刻 SupA 无法启用，派活也会被拒绝；先在槽位 1 放一个模型。',
+      'Without T1 there is no tier to catch the hardest task. SupA cannot be enabled and spawns are refused; put a model in slot 1 first.': '没有 T1 就没有能接住最难任务的档位。此刻 SupA 无法启用，派活也会被拒绝；先在槽位 1 放一个模型。',
       'empty slot — drag a tier here': '空槽位 — 把模型拖到这里',
       'Reset': '重置',
       'Sure?': '确定？',
@@ -970,14 +970,14 @@ window.__ModuleLoader__.load({
       'default effort': '默认强度',
       'efforts': '可选强度',
       'no reasoning metadata': '无推理强度信息',
-      'route no pin hint': '这条路由不需要验证：llm 服务已经声明了它。按默认强度添加即可。',
+      'This route needs no pin: the llm service already advertises it. Add it at its default effort.': '这条路由不需要验证：llm 服务已经声明了它。按默认强度添加即可。',
       'listed': '可见',
       'hidden': '隐藏',
       'language': '界面语言',
       'auto': '自动',
-      'nothing verified hint': '还没有验证过任何模型。取消勾选"只看已验证"，然后点某个模型旁的"测试"——一次真实调用就能证明它可用。',
-      'saving hint': '保存会改写 profile 里的插件行，插件重启约一秒。',
-      'which sessions hint': '哪些会话作为 SupA 运行；按需启用需要每个会话执行一次 `supa_session enable`',
+      'Nothing verified yet. Uncheck verified only, then press Pin on a model - one real call proves it.': '还没有验证过任何模型。取消勾选"只看已验证"，然后点某个模型旁的"测试"——一次真实调用就能证明它可用。',
+      'Saving rewrites this plugin row in the profile config, which restarts it for about a second.': '保存会改写 profile 里的插件行，插件重启约一秒。',
+      'Which sessions run as SupA; opt-in needs supa_session enable once per session': '哪些会话作为 SupA 运行；按需启用需要每个会话执行一次 `supa_session enable`',
       'hide unpinned hint': '隐藏未验证或验证失败的模型',
       'which shell calls go to a worker instead of this turn': '哪些命令转交给子代理，而不是在本轮执行',
       'how many children may run at once': '同时最多几个子代理',
@@ -989,14 +989,14 @@ window.__ModuleLoader__.load({
       'root sessions only': '仅根会话',
       'by preset': '按预设',
       'minutes': '分钟',
-      'auto approve hint': '请求当场批准，并记入账本',
-      'all slots taken': '十个槽位都占了——先移除一个再加。',
-      'added to free slot': '已放入第一个空槽位，之后可以拖动调整位置。',
+      'A request is granted once and audited in the ledger': '请求当场批准，并记入账本',
+      'All ten slots are taken - remove one to add another.': '十个槽位都占了——先移除一个再加。',
+      'Added to the first free slot; drag it into place afterwards.': '已放入第一个空槽位，之后可以拖动调整位置。',
       'provider': '提供方',
       'model': '模型',
       'effort': '推理强度',
       'label': '名称',
-      'ladder explain': '阶梯共十个槽位：T1 最强，负责 10 分难度的任务；T10 最弱，负责 1 分难度。拖动左侧手柄可以改变槽位——槽位就是它的档位。',
+      'The ladder is ten slots: T1 is the strongest and covers a 10-point task, T10 the weakest and covers a 1-point task. Drag a tier by its handle to change its slot; the slot is its tier.': '阶梯共十个槽位：T1 最强，负责 10 分难度的任务；T10 最弱，负责 1 分难度。拖动左侧手柄可以改变槽位——槽位就是它的档位。',
     }
     const t = (english) => (activeLang === 'zh' ? (ZH[english] ?? english) : english)
 
@@ -1048,7 +1048,7 @@ window.__ModuleLoader__.load({
       }, [load])
 
       if (error) return h('div', { style: s.page }, h('div', { style: s.error }, `stats: ${error}`))
-      if (!stats) return h('div', { style: s.page }, h('div', { style: s.hint }, t('loading usage…')))
+      if (!stats) return h('div', { style: s.page }, h('div', { style: s.hint }, t('Loading usage…')))
 
       const summary = stats.summary ?? []
       const recent = stats.recent ?? []
@@ -1178,7 +1178,7 @@ window.__ModuleLoader__.load({
         h('div', { style: s.card },
           h('div', { style: s.sectionTitle }, t('Per tier')),
           summary.length === 0
-            ? h('div', { style: s.hint }, t('per tier hint'))
+            ? h('div', { style: s.hint }, t('No calls recorded yet. Delegate one task and it shows up here.'))
             : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, ...summaryRows)),
 
         h('div', { style: s.card },
@@ -1190,7 +1190,7 @@ window.__ModuleLoader__.load({
         h('div', { style: s.card },
           h('div', { style: s.sectionTitle }, t('Call timeline')),
           laneRows.length === 0
-            ? h('div', { style: s.hint }, t('timeline hint'))
+            ? h('div', { style: s.hint }, t('No finished calls yet.'))
             : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
               h('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: 10, color: color.muted } },
                 ...[0, 0.25, 0.5, 0.75, 1].map((fraction) => h('span', { key: fraction }, `${Math.round(axisMs * fraction)}ms`))),
@@ -1232,6 +1232,7 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
 
 
