@@ -469,74 +469,91 @@ window.__ModuleLoader__.load({
         setChildren(String(config?.maxChildren ?? ''))
       }, [config?.maxChildren])
 
+      // One shape for every row: label and control on one line, the explanation
+      // under them as its own line. Inline hints wrap badly and make the card
+      // look ragged.
+      const control = { ...s.input, width: 190 }
+      const field = (label, widget, hint) => h('div', {
+        style: {
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 5,
+          padding: '9px 0',
+          borderTop: `1px solid ${color.border}`,
+        },
+      },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+        h('span', { style: { fontSize: 12.5, minWidth: 76, color: color.text } }, label),
+        widget),
+      hint
+        ? h('div', { style: { fontSize: 11.5, lineHeight: '17px', color: color.muted, paddingLeft: 86 } }, hint)
+        : null)
+
       return h('div', { style: s.card },
         h('div', { style: s.sectionTitle }, t('Policy')),
         h('div', { style: s.hint }, t('saving hint')),
-        h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Session scope')),
+        field(t('Session scope'),
           h('select', {
-            style: s.input,
+            style: control,
             value: config.mode,
             disabled: busy,
             onChange: (event) => onConfig({ mode: event.target.value }),
           },
           h('option', { value: 'session' }, t('session (opt-in)')),
-          h('option', { value: 'all' }, 'every session'),
-          h('option', { value: 'root' }, 'root sessions only'),
-          h('option', { value: 'preset' }, 'by preset')),
-          h('span', { style: { ...s.meta, flex: 1 } }, t('which sessions hint'))),
-        h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Approvals')),
+          h('option', { value: 'all' }, t('every session')),
+          h('option', { value: 'root' }, t('root sessions only')),
+          h('option', { value: 'preset' }, t('by preset'))),
+          t('which sessions hint')),
+        field(t('Approvals'),
           h('button', {
             style: s.btn,
             disabled: busy,
             onClick: () => onConfig({ autoApprove: !config.autoApprove }),
           }, config.autoApprove ? t('decide in-process') : t('ask the user')),
-          h('span', { style: { ...s.meta, flex: 1 } }, config.autoApprove
-            ? 'a request is granted once and audited in the ledger'
-            : t('a request goes to the human through the approval prompt'))),
-        h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Authority ceiling')),
+          config.autoApprove
+            ? t('auto approve hint')
+            : t('a request goes to the human through the approval prompt')),
+        field(t('Authority ceiling'),
           h('select', {
-            style: s.input,
+            style: control,
             value: config.authority,
             disabled: busy,
             onChange: (event) => onConfig({ authority: event.target.value }),
           },
           h('option', { value: 'workspace' }, 'workspace'),
           h('option', { value: 'full' }, 'full')),
-          h('span', { style: { ...s.meta, flex: 1 } }, t('the most a root SupA holds without asking the human'))),
-        h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Failure cooldown')),
-          h('input', {
-            style: { ...s.input, width: 80 },
-            value: minutes,
-            placeholder: 'minutes',
-            onChange: (event) => setMinutes(event.target.value),
-          }),
-          h('button', {
-            style: s.btn,
-            disabled: busy,
-            onClick: () => onConfig({ failureCooldownMinutes: Number(minutes) || 0 }),
-          }, t('Apply')),
-          h('span', { style: { ...s.meta, flex: 1 } }, t('how long a failed tier stays out of rotation'))),
-        h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Fan-out')),
-          h('input', {
-            style: { ...s.input, width: 70 },
-            value: children,
-            onChange: (event) => setChildren(event.target.value),
-          }),
-          h('button', {
-            style: s.btn,
-            disabled: busy,
-            onClick: () => onConfig({ maxChildren: Number(children) || 1 }),
-          }, t('Apply')),
-          h('span', { style: { ...s.meta, flex: 1 } }, t('how many children may run at once'))),
-        h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Shell hand-off')),
+          t('the most a root SupA holds without asking the human')),
+        field(t('Failure cooldown'),
+          h('div', { style: { display: 'flex', gap: 6, alignItems: 'center' } },
+            h('input', {
+              style: { ...s.input, width: 76 },
+              value: minutes,
+              placeholder: t('minutes'),
+              onChange: (event) => setMinutes(event.target.value),
+            }),
+            h('span', { style: { ...s.meta, fontSize: 11.5 } }, t('minutes')),
+            h('button', {
+              style: s.btn,
+              disabled: busy,
+              onClick: () => onConfig({ failureCooldownMinutes: Number(minutes) || 0 }),
+            }, t('Apply'))),
+          t('how long a failed tier stays out of rotation')),
+        field(t('Fan-out'),
+          h('div', { style: { display: 'flex', gap: 6, alignItems: 'center' } },
+            h('input', {
+              style: { ...s.input, width: 76 },
+              value: children,
+              onChange: (event) => setChildren(event.target.value),
+            }),
+            h('button', {
+              style: s.btn,
+              disabled: busy,
+              onClick: () => onConfig({ maxChildren: Number(children) || 1 }),
+            }, t('Apply'))),
+          t('how many children may run at once')),
+        field(t('Shell hand-off'),
           h('select', {
-            style: s.input,
+            style: control,
             value: config.handOffShell,
             disabled: busy,
             onChange: (event) => onConfig({ handOffShell: event.target.value }),
@@ -544,15 +561,14 @@ window.__ModuleLoader__.load({
           h('option', { value: 'blocking' }, t('sleeps and loops')),
           h('option', { value: 'long' }, t('sleeps, builds, tests')),
           h('option', { value: 'all' }, t('every shell command'))),
-          h('span', { style: { ...s.meta, flex: 1 } }, t('which shell calls go to a worker instead of this turn'))),
-        h('div', { style: s.row },
-          h('span', { style: { fontSize: 12, minWidth: 150 } }, t('Questions')),
+          t('which shell calls go to a worker instead of this turn')),
+        field(t('Questions'),
           h('button', {
             style: s.btn,
             disabled: busy,
             onClick: () => onConfig({ denyBlockingQuestions: !config.denyBlockingQuestions }),
           }, config.denyBlockingQuestions ? t('refused') : t('allowed')),
-          h('span', { style: { ...s.meta, flex: 1 } }, t('whether ask_user_question may pop the option dialog'))),
+          t('whether ask_user_question may pop the option dialog')),
       )
     }
 
@@ -905,6 +921,11 @@ window.__ModuleLoader__.load({
       'the most a root SupA holds without asking the human': 'SupA 不问人时的最高权限',
       'whether ask_user_question may pop the option dialog': '是否允许弹出选项对话框',
       'a request goes to the human through the approval prompt': '请求通过审批提示交给人类',
+      'every session': '所有会话',
+      'root sessions only': '仅根会话',
+      'by preset': '按预设',
+      'minutes': '分钟',
+      'auto approve hint': '请求当场批准，并记入账本',
     }
     const t = (english) => (LOCALE === 'zh' ? (ZH[english] ?? english) : english)
 
