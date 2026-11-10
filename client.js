@@ -175,8 +175,9 @@ window.__ModuleLoader__.load({
         }, confirming ? 'Sure?' : '✕')))
     }
 
-    function Catalog({ catalog, llm, busy, onScan, onPin }) {
+    function Catalog({ catalog, llm, busy, onScan, onPin, onAdd }) {
       const [pending, setPending] = useState('')
+      const [adding, setAdding] = useState('')
       const run = async (kind, body) => {
         setPending(kind)
         try {
@@ -221,27 +222,59 @@ window.__ModuleLoader__.load({
                   : verdicts.every((verdict) => verdict.ok)
                     ? { color: color.ok, label: 'pinned usable' }
                     : { color: color.bad, label: 'pin failed' }
-                return h('div', {
-                  key: model.slug,
-                  style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
-                },
-                h('span', {
-                  style: { width: 7, height: 7, borderRadius: '50%', background: status.color, flexShrink: 0 },
-                  title: status.label,
-                }),
-                h('span', { style: { fontSize: 12, minWidth: 150, color: color.text } }, model.slug),
-                h('span', { style: s.chip }, model.visibility || '?'),
-                h('span', { style: { ...s.meta, flex: 1 } },
-                  model.efforts.map((effort) => {
-                    const verdict = verdictOf(model.slug, effort)
-                    return `${effort}${verdict ? (verdict.ok ? ' ✓' : ' ✕') : ''}`
-                  }).join('  ') || 'no efforts'),
-                h('button', {
-                  style: s.btn,
-                  onClick: () => run(`pin:${model.slug}`, { action: 'pin', model: model.slug }),
-                  disabled: busyNow,
-                  title: `Test every effort of ${model.slug} with a real call`,
-                }, 'Pin'))
+                const pinnable = status.color === color.ok
+                return h('div', { key: model.slug, style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+                  h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' } },
+                    h('span', {
+                      style: { width: 7, height: 7, borderRadius: '50%', background: status.color, flexShrink: 0 },
+                      title: status.label,
+                    }),
+                    h('span', { style: { fontSize: 12, minWidth: 150, color: color.text } }, model.slug),
+                    h('span', { style: s.chip }, model.visibility || '?'),
+                    h('span', { style: { ...s.meta, flex: 1 } },
+                      model.efforts.map((effort) => {
+                        const verdict = verdictOf(model.slug, effort)
+                        return `${effort}${verdict ? (verdict.ok ? ' ✓' : ' ✕') : ''}`
+                      }).join('  ') || 'no efforts'),
+                    h('button', {
+                      style: s.btn,
+                      onClick: () => run(`pin:${model.slug}`, { action: 'pin', model: model.slug }),
+                      disabled: busyNow,
+                      title: `Test every effort of ${model.slug} with a real call`,
+                    }, 'Pin'),
+                    h('button', {
+                      style: pinnable ? s.btn : { ...s.btn, opacity: 0.4 },
+                      onClick: () => setAdding(adding === model.slug ? '' : model.slug),
+                      disabled: busyNow || !pinnable,
+                      title: pinnable ? 'Add this model to the first free slot' : 'Pin it green first',
+                    }, 'Add')),
+                  adding === model.slug
+                    ? h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', paddingLeft: 17, flexWrap: 'wrap' } },
+                      h('span', { style: { fontSize: 11, color: color.muted } }, 'effort:'),
+                      ...model.efforts.map((effort) => {
+                        const verdict = verdictOf(model.slug, effort)
+                        const blocked = Boolean(verdict && !verdict.ok)
+                        return h('button', {
+                          key: effort,
+                          style: blocked ? { ...s.btn, opacity: 0.35, textDecoration: 'line-through' } : s.btn,
+                          disabled: busyNow || blocked,
+                          title: blocked ? `${effort} failed its pin` : `Add ${model.slug} at ${effort}`,
+                          onClick: () => {
+                            setAdding('')
+                            onAdd({
+                              action: 'add',
+                              tier: {
+                                label: `${model.slug} (${effort})`,
+                                kind: 'cli',
+                                driver: 'codex',
+                                model: model.slug,
+                                reasoningEffort: effort,
+                              },
+                            })
+                          },
+                        }, effort)
+                      }))
+                    : null)
               }))
             : h('div', { style: s.hint }, 'No catalog cached. Scan to read the model list.'),
         llm?.length
@@ -526,7 +559,7 @@ window.__ModuleLoader__.load({
             h('button', { style: s.btn, onClick: () => act({ action: 'clear', id: failure.id }) }, 'Restore'))))
           : null,
 
-        h(Catalog, { catalog: state.catalog, llm: state.llm, busy, onScan: act, onPin: act }),
+        h(Catalog, { catalog: state.catalog, llm: state.llm, busy, onScan: act, onPin: act, onAdd: act }),
         h(AddForm, { drivers: state.drivers, onAdd: act, disabled: tiers.length >= 10 }),
 
         error ? h('div', { style: s.error }, error) : null,
