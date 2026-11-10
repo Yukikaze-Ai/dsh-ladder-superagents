@@ -294,6 +294,61 @@ window.__ModuleLoader__.load({
         error ? h('div', { style: s.error }, error) : null)
     }
 
+    function Policy({ config, busy, onConfig }) {
+      const [minutes, setMinutes] = useState('')
+      useEffect(() => {
+        setMinutes(String(Math.round((config?.failureCooldownMs ?? 0) / 60000)))
+      }, [config?.failureCooldownMs])
+
+      return h('div', { style: s.card },
+        h('div', { style: s.sectionTitle }, 'Policy'),
+        h('div', { style: s.hint }, 'Saving writes this plugin row in the profile config, which restarts it for about a second.'),
+        h('div', { style: s.row },
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Approvals'),
+          h('button', {
+            style: s.btn,
+            disabled: busy,
+            onClick: () => onConfig({ autoApprove: !config.autoApprove }),
+          }, config.autoApprove ? 'decide in-process' : 'ask the user'),
+          h('span', { style: { ...s.meta, flex: 1 } }, config.autoApprove
+            ? 'a request is granted once and audited in the ledger'
+            : 'a request goes to the human through the approval prompt')),
+        h('div', { style: s.row },
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Authority ceiling'),
+          h('select', {
+            style: s.input,
+            value: config.authority,
+            disabled: busy,
+            onChange: (event) => onConfig({ authority: event.target.value }),
+          },
+          h('option', { value: 'workspace' }, 'workspace'),
+          h('option', { value: 'full' }, 'full')),
+          h('span', { style: { ...s.meta, flex: 1 } }, 'the most a root SupA holds without asking the human')),
+        h('div', { style: s.row },
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Failure cooldown'),
+          h('input', {
+            style: { ...s.input, width: 80 },
+            value: minutes,
+            placeholder: 'minutes',
+            onChange: (event) => setMinutes(event.target.value),
+          }),
+          h('button', {
+            style: s.btn,
+            disabled: busy,
+            onClick: () => onConfig({ failureCooldownMinutes: Number(minutes) || 0 }),
+          }, 'Apply'),
+          h('span', { style: { ...s.meta, flex: 1 } }, 'how long a failed tier stays out of rotation')),
+        h('div', { style: s.row },
+          h('span', { style: { fontSize: 12, minWidth: 150 } }, 'Questions'),
+          h('button', {
+            style: s.btn,
+            disabled: busy,
+            onClick: () => onConfig({ denyBlockingQuestions: !config.denyBlockingQuestions }),
+          }, config.denyBlockingQuestions ? 'refused' : 'allowed'),
+          h('span', { style: { ...s.meta, flex: 1 } }, 'whether ask_user_question may pop the option dialog')),
+      )
+    }
+
     function SupaSettings() {
       const [state, setState] = useState(null)
       const [cwd, setCwd] = useState('')
@@ -329,6 +384,21 @@ window.__ModuleLoader__.load({
           setBusy(false)
         }
       }, [])
+
+      const configure = useCallback(async (changes) => {
+        setBusy(true)
+        try {
+          await request('/supa/action', { action: 'config', ...changes })
+          setError('')
+          // The row is re-applied from the profile patch, so wait for the
+          // plugin to come back before reading the new state.
+          setTimeout(() => load(), 1400)
+        } catch (failure) {
+          setError(String(failure.message ?? failure))
+        } finally {
+          setBusy(false)
+        }
+      }, [load])
 
       const tiers = state?.tiers ?? []
       const reorder = useCallback((id, slot) => {
@@ -382,6 +452,8 @@ window.__ModuleLoader__.load({
               h('div', { style: { width: 28, textAlign: 'center', fontSize: 12, color: color.muted, lineHeight: '20px', paddingLeft: 12 } }, `T${slot}`),
               h('div', { style: s.body }, h('div', { style: s.meta }, 'empty slot — drag a tier here')))
           })),
+
+        h(Policy, { config: state.config, busy, onConfig: configure }),
 
         state.failures?.length
           ? h('div', { style: s.card },

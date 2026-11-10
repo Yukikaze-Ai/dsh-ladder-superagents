@@ -1493,6 +1493,7 @@ export function apply(ctx, config) {
         autoApprove: cfg.autoApprove,
         authority: cfg.authority,
         retryOnFailure: cfg.retryOnFailure,
+        denyBlockingQuestions: cfg.denyBlockingQuestions,
         failureCooldownMs: cfg.failureCooldownMs,
       },
       tiers: ladder.tiers.map((tier, index) => ({
@@ -1520,6 +1521,28 @@ export function apply(ctx, config) {
     const file = modelsFileOf(cwd, cfg)
     const ladder = await readLadder(file)
     const tierId = typeof body?.id === 'string' ? body.id : ''
+
+    if (body?.action === 'config') {
+      const changes = {}
+      if (typeof body.autoApprove === 'boolean') changes.autoApprove = body.autoApprove
+      if (body.authority === 'workspace' || body.authority === 'full') changes.authority = body.authority
+      if (typeof body.denyBlockingQuestions === 'boolean') changes.denyBlockingQuestions = body.denyBlockingQuestions
+      const minutes = Number(body.failureCooldownMinutes)
+      if (Number.isFinite(minutes) && minutes >= 0) {
+        changes.failureCooldownMs = Math.max(0, Math.round(minutes * 60000))
+      }
+      if (Object.keys(changes).length === 0) throw new Error('nothing to change')
+
+      const entry = ctx.fiber?.entry
+      const editor = ctx.get?.('configEditor')
+      if (!entry || !editor) throw new Error('configuration editing is unavailable in this profile')
+      // Saving re-applies this plugin row, which restarts it: answer first,
+      // then write the patch so the response is not cut off by the restart.
+      setTimeout(() => {
+        editor.edit(entry, (current) => ({ ...current, ...changes })).catch(() => {})
+      }, 150)
+      return { ...(await settingsState(cwd)), pending: changes }
+    }
 
     if (body?.action === 'scan') {
       await scanCodexModels(cfg, cwd)
