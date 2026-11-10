@@ -885,16 +885,13 @@ window.__ModuleLoader__.load({
         h('span', { style: { fontSize: 11, minWidth: 84, color: color.muted, textAlign: 'right' } }, `${row.done}/${total}`))
       })
 
-      // Lane timeline across the recent window: one bar per finished call,
-      // placed by start time and sized by duration.
+      // One row per finished call, width normalised to the slowest call in the
+      // window. Wall-clock position is deliberately dropped: a five-second call
+      // next to a twenty-minute gap is invisible on a time axis.
       const finished = recent.filter((record) => Number(record.ms) > 0)
-      const startOf = (record) => Number(record.at) - Number(record.ms || 0)
-      const windowStart = finished.length ? Math.min(...finished.map(startOf)) : 0
-      const windowEnd = finished.length ? Math.max(...finished.map((record) => Number(record.at))) : 0
-      const span = Math.max(1, windowEnd - windowStart)
+      const slowest = finished.reduce((max, record) => Math.max(max, Number(record.ms)), 0) || 1
       const laneRows = finished.slice(0, 20).map((record, index) => {
-        const left = ((startOf(record) - windowStart) / span) * 100
-        const width = Math.max(1.5, (Number(record.ms) / span) * 100)
+        const width = Math.max(2, (Number(record.ms) / slowest) * 100)
         return h('div', {
           key: `lane-${record.at}-${index}`,
           style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap' },
@@ -904,18 +901,15 @@ window.__ModuleLoader__.load({
           style: {
             flex: 1,
             height: 10,
-            position: 'relative',
             background: 'var(--dsw-alias-bg-layer-2, rgba(127,127,127,.08))',
             borderRadius: 3,
+            overflow: 'hidden',
           },
         },
         h('div', {
           title: `${record.route ?? ''} · ${record.ms}ms`,
           style: {
-            position: 'absolute',
-            left: `${Math.min(98, Math.max(0, left))}%`,
-            width: `${Math.min(100, width)}%`,
-            top: 0,
+            width: `${width}%`,
             height: '100%',
             borderRadius: 3,
             background: record.kind === 'failed'
