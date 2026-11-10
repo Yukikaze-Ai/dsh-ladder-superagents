@@ -583,6 +583,7 @@ window.__ModuleLoader__.load({
 
     function SupaSettings() {
       const [state, setState] = useState(null)
+      useLang()
       const [cwd, setCwd] = useState('')
       const [error, setError] = useState('')
       const [busy, setBusy] = useState(false)
@@ -677,7 +678,16 @@ window.__ModuleLoader__.load({
               },
               title: 'Replace the ladder with the built-in default (four thinking levels of one model)',
             }, resetting ? t('Sure?') : t('Reset')),
-            h('button', { style: s.btn, onClick: () => load(cwd), disabled: busy }, t('Refresh')))),
+            h('button', { style: s.btn, onClick: () => load(cwd), disabled: busy }, t('Refresh')),
+            h('select', {
+              style: { ...s.input, width: 128, padding: '4px 6px' },
+              value: choice,
+              title: t('language'),
+              onChange: (event) => setLanguage(event.target.value),
+            },
+            h('option', { value: 'auto' }, `${t('auto')}（${detected === 'zh' ? '中文' : 'English'}）`),
+            h('option', { value: 'zh' }, '中文'),
+            h('option', { value: 'en' }, 'English')))),
 
         state.ladderReady === false
           ? h('div', { style: s.card },
@@ -752,6 +762,7 @@ window.__ModuleLoader__.load({
     }
 
     function SupaSessionToggle(props) {
+      useLang()
       const sessionId = String(props?.sessionId ?? props?.session?.id ?? '')
       const [state, setState] = useState(null)
       const [busy, setBusy] = useState(false)
@@ -829,10 +840,11 @@ window.__ModuleLoader__.load({
       'SupA')
     }
 
-    // Two whole languages: Chinese when the app runs in Chinese, English
-    // otherwise. Keys are the English text, so a missing translation falls back
-    // to English instead of showing a placeholder.
-    const LOCALE = (() => {
+    // Two whole languages: Chinese when the app runs in Chinese or the user
+    // picked it, English otherwise. Keys are the English text, so a missing
+    // translation falls back to English instead of showing a placeholder.
+    const LANG_KEY = 'dsh-ladder-superagents.lang'
+    const detectLang = () => {
       let value = ''
       try {
         value = String(document?.documentElement?.lang || '')
@@ -847,7 +859,40 @@ window.__ModuleLoader__.load({
         }
       }
       return value.toLowerCase().startsWith('zh') ? 'zh' : 'en'
-    })()
+    }
+    const readChoice = () => {
+      try {
+        const stored = localStorage.getItem(LANG_KEY)
+        if (stored === 'zh' || stored === 'en' || stored === 'auto') return stored
+      } catch {
+        // storage may be unavailable; auto is the fallback
+      }
+      return 'auto'
+    }
+    let choice = readChoice()
+    let detected = detectLang()
+    let activeLang = choice === 'auto' ? detected : choice
+    const langListeners = new Set()
+    const setLanguage = (next) => {
+      choice = next === 'zh' || next === 'en' ? next : 'auto'
+      try {
+        localStorage.setItem(LANG_KEY, choice)
+      } catch {
+        // the choice still applies to this page
+      }
+      activeLang = choice === 'auto' ? detected : choice
+      langListeners.forEach((listener) => listener(activeLang))
+    }
+    /** Subscribe so a language change re-renders every suffix of the UI. */
+    const useLang = () => {
+      const [lang, set] = useState(activeLang)
+      useEffect(() => {
+        const listener = (next) => set(next)
+        langListeners.add(listener)
+        return () => langListeners.delete(listener)
+      }, [])
+      return lang
+    }
 
     const ZH = {
       'Model ladder': '模型阶梯',
@@ -928,6 +973,8 @@ window.__ModuleLoader__.load({
       'route no pin hint': '这条路由不需要验证：llm 服务已经声明了它。按默认强度添加即可。',
       'listed': '可见',
       'hidden': '隐藏',
+      'language': '界面语言',
+      'auto': '自动',
       'nothing verified hint': '还没有验证过任何模型。取消勾选"只看已验证"，然后点某个模型旁的"测试"——一次真实调用就能证明它可用。',
       'saving hint': '保存会改写 profile 里的插件行，插件重启约一秒。',
       'which sessions hint': '哪些会话作为 SupA 运行；按需启用需要每个会话执行一次 `supa_session enable`',
@@ -951,7 +998,7 @@ window.__ModuleLoader__.load({
       'label': '名称',
       'ladder explain': '阶梯共十个槽位：T1 最强，负责 10 分难度的任务；T10 最弱，负责 1 分难度。拖动左侧手柄可以改变槽位——槽位就是它的档位。',
     }
-    const t = (english) => (LOCALE === 'zh' ? (ZH[english] ?? english) : english)
+    const t = (english) => (activeLang === 'zh' ? (ZH[english] ?? english) : english)
 
     const SEGMENTS = [
       ['1', t('1 hour')],
@@ -977,6 +1024,7 @@ window.__ModuleLoader__.load({
       fontWeight: 500,
     }
 
+      useLang()
     function SupaStatsView() {
       const [stats, setStats] = useState(null)
       const [error, setError] = useState('')
@@ -1162,7 +1210,7 @@ window.__ModuleLoader__.load({
           name: 'settings.section',
           id: 'ladder-superagents',
           order: 25,
-          label: LOCALE === 'zh' ? 'SupA 配置' : 'SupA settings',
+          label: activeLang === 'zh' ? 'SupA 配置' : 'SupA settings',
         }, SupaSettings))
 
         // One control in the session header: the human switch for `mode: session`.
@@ -1178,12 +1226,13 @@ window.__ModuleLoader__.load({
           name: 'conversation.view',
           id: 'supa-stats',
           order: 40,
-          label: LOCALE === 'zh' ? '统计' : 'Stats',
+          label: activeLang === 'zh' ? '统计' : 'Stats',
         }, SupaStatsView))
       },
     }
   },
 })
+
 
 
 
