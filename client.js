@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
         borderRadius: 12,
         padding: '12px 14px',
       },
-      rank: { width: 16, textAlign: 'center', fontSize: 12, color: color.muted, lineHeight: '20px' },
+      rank: { width: 28, textAlign: 'center', fontSize: 12, color: color.muted, lineHeight: '20px' },
       body: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 },
       tierTitle: { fontSize: 13, fontWeight: 600, lineHeight: '20px' },
       meta: { fontSize: 12, color: color.muted, lineHeight: '18px', wordBreak: 'break-word' },
@@ -123,7 +123,7 @@ window.__ModuleLoader__.load({
       return data
     }
 
-    function TierCard({ tier, index, count, onAction, onReorder, dragIndex, setDragIndex }) {
+    function TierCard({ tier, onAction, onReorder, dragIndex, setDragIndex }) {
       const [confirming, setConfirming] = useState(false)
       useEffect(() => {
         if (!confirming) return undefined
@@ -131,13 +131,13 @@ window.__ModuleLoader__.load({
         return () => clearTimeout(timer)
       }, [confirming])
       const toggle = () => onAction({ action: 'enable', id: tier.id, enabled: !tier.enabled })
-      const move = (to) => onAction({ action: 'move', id: tier.id, to })
+      const move = (slot) => onAction({ action: 'move', id: tier.id, to: slot })
       return h('div', {
         draggable: true,
         onDragStart: (event) => {
-          event.dataTransfer.setData('text/plain', String(index))
+          event.dataTransfer.setData('text/plain', tier.id)
           event.dataTransfer.effectAllowed = 'move'
-          setDragIndex(index)
+          setDragIndex(tier.slot)
         },
         onDragEnd: () => setDragIndex(null),
         onDragOver: (event) => {
@@ -146,24 +146,24 @@ window.__ModuleLoader__.load({
         },
         onDrop: (event) => {
           event.preventDefault()
-          const from = Number(event.dataTransfer.getData('text/plain'))
+          const id = event.dataTransfer.getData('text/plain')
           setDragIndex(null)
-          if (Number.isInteger(from) && from !== index) onReorder(from, index)
+          if (id && id !== tier.id) onReorder(id, tier.slot)
         },
-        style: dragIndex === index ? { ...s.tier, opacity: 0.4 } : s.tier,
+        style: dragIndex === tier.slot ? { ...s.tier, opacity: 0.4 } : s.tier,
       },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, paddingTop: 2 } },
-        h('span', { style: { cursor: 'grab', color: color.muted, fontSize: 12 }, title: 'Drag to reorder' }, '⠿'),
-        h('span', { style: s.rank }, String(index + 1))),
+        h('span', { style: { cursor: 'grab', color: color.muted, fontSize: 12 }, title: 'Drag to another slot' }, '⠿'),
+        h('span', { style: s.rank }, `T${tier.slot}`)),
       h('div', { style: s.body },
         h('div', { style: s.tierTitle }, tier.label),
-        h('div', { style: s.meta }, `${tier.route} · ceiling ${tier.ceiling} · ${tier.id}`)),
+        h('div', { style: s.meta }, `${tier.route} · ${tier.id}`)),
       h('div', { style: s.state },
         h('span', { style: s.dot(tier.available && tier.enabled) }),
         h('span', null, tier.enabled ? (tier.available ? 'usable' : 'missing') : 'disabled')),
       h('div', { style: s.actions },
-        h('button', { style: s.btnIcon, onClick: () => move(index - 1), disabled: index === 0, title: 'Move up' }, '↑'),
-        h('button', { style: s.btnIcon, onClick: () => move(index + 1), disabled: index === count - 1, title: 'Move down' }, '↓'),
+        h('button', { style: s.btnIcon, onClick: () => move(tier.slot - 1), disabled: tier.slot <= 1, title: 'Move up a tier' }, '↑'),
+        h('button', { style: s.btnIcon, onClick: () => move(tier.slot + 1), disabled: tier.slot >= 10, title: 'Move down a tier' }, '↓'),
         h('button', { style: s.btn, onClick: toggle, title: tier.enabled ? 'Disable this tier' : 'Enable this tier' }, tier.enabled ? 'Off' : 'On'),
         h('button', {
           style: confirming ? { ...s.btn, color: color.bad } : s.btnIcon,
@@ -285,12 +285,6 @@ window.__ModuleLoader__.load({
             onChange: (event) => setEffort(event.target.value),
           }),
           h('input', {
-            style: { ...s.input, width: 70 },
-            placeholder: 'ceiling',
-            value: ceiling,
-            onChange: (event) => setCeiling(event.target.value),
-          }),
-          h('input', {
             style: { ...s.input, flex: 1, minWidth: 160 },
             placeholder: 'label',
             value: label,
@@ -337,10 +331,9 @@ window.__ModuleLoader__.load({
       }, [])
 
       const tiers = state?.tiers ?? []
-      const reorder = useCallback((from, to) => {
-        const tier = (state?.tiers ?? [])[from]
-        if (tier) act({ action: 'move', id: tier.id, to })
-      }, [state, act])
+      const reorder = useCallback((id, slot) => {
+        if (id) act({ action: 'move', id, to: slot })
+      }, [act])
 
       const summary = useMemo(() => {
         if (!state) return ''
@@ -364,18 +357,31 @@ window.__ModuleLoader__.load({
           h('button', { style: s.btn, onClick: () => load(cwd), disabled: busy }, 'Refresh')),
 
         h('div', { style: s.section },
-          tiers.length === 0
-            ? h('div', { style: s.card }, h('div', { style: s.hint }, 'The ladder is empty: every child inherits the parent route.'))
-            : tiers.map((tier, index) => h(TierCard, {
-              key: tier.id,
-              tier,
-              index,
-              count: tiers.length,
-              onAction: act,
-              onReorder: reorder,
-              dragIndex,
-              setDragIndex,
-            }))),
+          ...Array.from({ length: 10 }, (_, offset) => {
+            const slot = offset + 1
+            const tier = tiers.find((entry) => entry.slot === slot)
+            return tier
+              ? h(TierCard, {
+                key: tier.id,
+                tier,
+                onAction: act,
+                onReorder: reorder,
+                dragIndex,
+                setDragIndex,
+              })
+              : h('div', {
+                key: `empty-${slot}`,
+                style: { ...s.tier, borderStyle: 'dashed', opacity: 0.55 },
+                onDragOver: (event) => event.preventDefault(),
+                onDrop: (event) => {
+                  event.preventDefault()
+                  const id = event.dataTransfer.getData('text/plain')
+                  if (id) reorder(id, slot)
+                },
+              },
+              h('div', { style: { width: 28, textAlign: 'center', fontSize: 12, color: color.muted, lineHeight: '20px', paddingLeft: 12 } }, `T${slot}`),
+              h('div', { style: s.body }, h('div', { style: s.meta }, 'empty slot — drag a tier here')))
+          })),
 
         state.failures?.length
           ? h('div', { style: s.card },
@@ -396,7 +402,7 @@ window.__ModuleLoader__.load({
 
         error ? h('div', { style: s.error }, error) : null,
         h('div', { style: s.hint },
-          'Row 1 is the strongest and higher numbers are weaker — drag a row by its handle to reorder. Difficulty is the other axis: a task scored 1–10 takes the weakest tier whose ceiling still covers it.'),
+          'The ladder is ten slots: T1 is the strongest and covers a 10-point task, T10 the weakest and covers a 1-point task. Drag a tier by its handle to change its slot; the slot is its tier.'),
       )
     }
 

@@ -261,11 +261,15 @@ function failureActive(entry, cfg) {
   return Boolean(entry && Number(entry.at) && Date.now() - Number(entry.at) < cfg.failureCooldownMs)
 }
 
-async function recordFailure(cwd, cfg, key, error) {
-  if (!key) return
+async function recordFailure(cwd, cfg, keys, error) {
+  const list = (Array.isArray(keys) ? keys : [keys]).filter(Boolean)
+  if (list.length === 0) return
   const file = failuresFileOf(cwd, cfg)
   const all = readFailures(cwd, cfg)
-  all[key] = { at: Date.now(), error: String(error ?? '').slice(0, 300) }
+  const at = Date.now()
+  for (const key of list) {
+    all[key] = { at, error: String(error ?? '').slice(0, 300) }
+  }
   await mkdir(stateDirOf(), { recursive: true })
   await writeFile(file, `${JSON.stringify(all, null, 2)}\n`, 'utf8')
 }
@@ -321,6 +325,10 @@ function normalizeTier(raw, index) {
   const tier = raw && typeof raw === 'object' ? raw : {}
   const provider = typeof tier.provider === 'string' ? tier.provider : ''
   const model = typeof tier.model === 'string' ? tier.model : ''
+  const requestedSlot = Math.round(Number(tier.slot))
+  const slot = Number.isFinite(requestedSlot) && requestedSlot >= 1 && requestedSlot <= 10
+    ? requestedSlot
+    : Math.min(10, Math.max(1, index + 1))
   return {
     id: typeof tier.id === 'string' && tier.id ? tier.id : `t${index + 1}`,
     label: typeof tier.label === 'string' && tier.label ? tier.label : `${provider || '?'}/${model || '?'}`,
@@ -332,7 +340,9 @@ function normalizeTier(raw, index) {
     provider,
     model,
     reasoningEffort: typeof tier.reasoningEffort === 'string' ? tier.reasoningEffort : '',
-    ceiling: Math.min(10, Math.max(1, Number(tier.ceiling) || 5)),
+    // The slot is the tier: T1 is the strongest and covers a 10-point task.
+    slot,
+    ceiling: Math.min(10, Math.max(1, 11 - slot)),
     enabled: tier.enabled !== false,
   }
 }
@@ -340,7 +350,20 @@ function normalizeTier(raw, index) {
 async function readLadder(file) {
   try {
     const parsed = JSON.parse(await readFile(file, 'utf8'))
-    const tiers = Array.isArray(parsed?.tiers) ? parsed.tiers.map(normalizeTier) : []
+    const raw = Array.isArray(parsed?.tiers) ? parsed.tiers : []
+    const seen = new Set()
+    const tiers = raw.map((entry, index) => {
+      const tier = normalizeTier(entry, index)
+      if (seen.has(tier.slot)) {
+        // Two entries claiming one slot: move the later one to the first free.
+        let free = 1
+        while (seen.has(free) && free < 10) free += 1
+        tier.slot = free
+        tier.ceiling = Math.min(10, Math.max(1, 11 - free))
+      }
+      seen.add(tier.slot)
+      return tier
+    }).sort((a, b) => a.slot - b.slot)
     return { version: 1, tiers }
   } catch {
     return { version: 1, tiers: [] }
@@ -360,8 +383,20 @@ function tierRoute(tier) {
   return `${tier.provider}/${tier.model}${tier.reasoningEffort ? `@${tier.reasoningEffort}` : ''}`
 }
 
+/**
+ * Position is the tier: T1 is the strongest and covers a 10-point task, T10
+ * the weakest and covers a 1-point task. The ceiling is therefore derived from
+ * the slot, never typed by the user.
+ */
+function renumber(tiers) {
+  for (const tier of tiers) {
+    tier.ceiling = Math.min(10, Math.max(1, 11 - tier.slot))
+  }
+  return tiers
+}
+
 function renderTier(tier, index) {
-  return `${index + 1}. ${tier.id} ${tier.label} — ${tierRoute(tier)} · ceiling ${tier.ceiling}${tier.enabled ? '' : ' · disabled'}`
+  return `T${tier.slot}. ${tier.id} ${tier.label} — ${tierRoute(tier)} · covers up to ${tier.ceiling}${tier.enabled ? '' : ' · disabled'}`
 }
 
 /**
@@ -1082,19 +1117,28 @@ export function apply(ctx, config) {
     const tiers = ladder.tiers
     const availability = await Promise.all(tiers.map((tier) => tierAvailable(tier)))
     const failures = cwd ? readFailures(cwd, cfg) : {}
-    const healthy = tiers.filter((tier, index) => availability[index] && tier.enabled && !failureActive(failures[tier.id], cfg))
+    const healthy = tiers
+      .filter((tier, index) => availability[index] && tier.enabled && !failureActive(failures[tier.id], cfg))
+      .sort((a, b) => a.slot - b.slot)
+    const desired = Math.min(10, Math.max(1, 11 - difficulty))
+
     if (healthy.length === 0) {
-      // Everything is cooling down: use the strongest enabled tier rather than
-      // falling back to the parent route, and say so.
-      const fallback = tiers.filter((tier, index) => availability[index] && tier.enabled)
+      // Everything is cooling or disabled: use the strongest enabled tier
+      // rather than falling back to the parent route, and say so.
+      const fallback = tiers.filter((tier, index) => availability[index] && tier.enabled).sort((a, b) => a.slot - b.slot)
       if (fallback.length > 0) {
-        return { tier: fallback[0], degraded: false, usable: fallback.length, total: tiers.length, chain: fallback, cooled: true }
+        return { tier: fallback[0], degraded: false, usable: fallback.length, total: tiers.length, chain: fallback, cooled: true, desired }
       }
-      return { tier: null, degraded: false, usable: 0, total: tiers.length, chain: [] }
+      return { tier: null, degraded: false, usable: 0, total: tiers.length, chain: [], desired }
     }
-    const adequate = healthy.filter((tier) => tier.ceiling >= difficulty)
-    if (adequate.length > 0) return { tier: adequate[adequate.length - 1], degraded: false, usable: healthy.length, total: tiers.length, chain: healthy }
-    return { tier: healthy[0], degraded: true, usable: healthy.length, total: tiers.length, chain: healthy }
+
+    // Walk from the requested tier down to weaker slots; a hole (T1 empty)
+    // simply skips to the next defined slot. Nothing weaker left means the
+    // weakest available tier still gets the task.
+    const atOrWeaker = healthy.filter((tier) => tier.slot >= desired)
+    const pick = atOrWeaker[0] ?? healthy[healthy.length - 1]
+    const chain = atOrWeaker.length > 0 ? atOrWeaker : healthy
+    return { tier: pick, degraded: pick.slot !== desired, usable: healthy.length, total: tiers.length, chain, desired }
   }
 
   const routeOptions = (tier) => ({
@@ -1201,18 +1245,21 @@ export function apply(ctx, config) {
 
       if (args.action === 'clear') {
         const all = readFailures(cwd, cfg)
+        const ladder = await readLadder(modelsFileOf())
+        const tier = args.id ? ladder.tiers.find((entry) => entry.id === args.id) : undefined
+        const drop = new Set()
+        if (args.id) {
+          drop.add(args.id)
+          if (tier) drop.add(`route:${tierRoute(tier)}`)
+        }
         const next = args.id
-          ? Object.fromEntries(Object.entries(all).filter(([key]) => key !== args.id))
+          ? Object.fromEntries(Object.entries(all).filter(([key]) => !drop.has(key)))
           : {}
         await mkdir(stateDirOf(), { recursive: true })
         await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(next, null, 2)}\n`, 'utf8')
-        if (args.id) {
-          const ladder = await readLadder(modelsFileOf())
-          const tier = ladder.tiers.find((entry) => entry.id === args.id)
-          if (tier && tier.enabled === false) {
-            tier.enabled = true
-            await writeLadder(modelsFileOf(), ladder)
-          }
+        if (tier && tier.enabled === false) {
+          tier.enabled = true
+          await writeLadder(modelsFileOf(), ladder)
         }
         return args.id ? `cleared ${args.id} and put it back in rotation` : 'cleared every tier failure mark'
       }
@@ -1234,7 +1281,10 @@ export function apply(ctx, config) {
       const ladder = await readLadder(file)
 
       if (args.action === 'add') {
-        if (ladder.tiers.length >= 10) throw new Error('the ladder holds at most 10 tiers; remove one first')
+        const used = new Set(ladder.tiers.map((entry) => entry.slot))
+        if (used.size >= 10) throw new Error('all ten slots are taken; remove one first')
+        let freeSlot = 1
+        while (used.has(freeSlot)) freeSlot += 1
         const tier = normalizeTier({
           label: args.label,
           kind: args.kind,
@@ -1244,35 +1294,44 @@ export function apply(ctx, config) {
           model: args.model,
           reasoningEffort: args.reasoning_effort,
           ceiling: args.ceiling,
-        }, ladder.tiers.length)
+          slot: args.rank === undefined ? freeSlot : Number(args.rank) + 1,
+        }, freeSlot - 1)
+        const knownBad = readFailures(cwd, cfg)[`route:${tierRoute(tier)}`]
+        if (failureActive(knownBad, cfg)) {
+          throw new Error(`that configuration is marked failed (${String(knownBad.error).slice(0, 100)}); fix it before adding it to the ladder`)
+        }
         const taken = new Set(ladder.tiers.map((entry) => entry.id))
         if (taken.has(tier.id)) {
           let next = ladder.tiers.length + 1
           while (taken.has(`t${next}`)) next += 1
           tier.id = `t${next}`
         }
-        const at = Number.isInteger(args.rank) ? Math.min(Math.max(Number(args.rank), 0), ladder.tiers.length) : ladder.tiers.length
-        ladder.tiers.splice(at, 0, tier)
+        ladder.tiers.push(tier)
+        renumber(ladder.tiers)
         await writeLadder(file, ladder)
-        return `added ${tier.id} at position ${at + 1}\n${ladder.tiers.map(renderTier).join('\n')}`
+        return `added ${tier.id} to T${tier.slot}\n${ladder.tiers.map(renderTier).join('\n')}`
       }
 
       if (args.action === 'remove') {
         const before = ladder.tiers.length
         ladder.tiers = ladder.tiers.filter((tier) => tier.id !== args.id)
         if (ladder.tiers.length === before) throw new Error(`no tier with id ${args.id}`)
+        renumber(ladder.tiers)
         await writeLadder(file, ladder)
         return `removed ${args.id}\n${ladder.tiers.map(renderTier).join('\n') || '(ladder is empty)'}`
       }
 
       if (args.action === 'move') {
-        const from = ladder.tiers.findIndex((tier) => tier.id === args.id)
-        if (from < 0) throw new Error(`no tier with id ${args.id}`)
-        const to = Math.min(Math.max(Number(args.to_index) || 0, 0), ladder.tiers.length - 1)
-        const [tier] = ladder.tiers.splice(from, 1)
-        ladder.tiers.splice(to, 0, tier)
+        const tier = ladder.tiers.find((entry) => entry.id === args.id)
+        if (!tier) throw new Error(`no tier with id ${args.id}`)
+        const target = Math.min(10, Math.max(1, Math.round(Number(args.to_index)) || 1))
+        const occupant = ladder.tiers.find((entry) => entry.id !== tier.id && entry.slot === target)
+        if (occupant) occupant.slot = tier.slot
+        tier.slot = target
+        renumber(ladder.tiers)
+        ladder.tiers.sort((a, b) => a.slot - b.slot)
         await writeLadder(file, ladder)
-        return `moved ${tier.id} to position ${to + 1}\n${ladder.tiers.map(renderTier).join('\n')}`
+        return `moved ${tier.id} to T${tier.slot}\n${ladder.tiers.map(renderTier).join('\n')}`
       }
 
       const difficulty = Math.min(10, Math.max(1, Number(args.difficulty) || 5))
@@ -1281,9 +1340,11 @@ export function apply(ctx, config) {
         return `difficulty ${difficulty}: no usable tier (${picked.total} configured). A spawn would inherit your own route.`
       }
       const startIndex = picked.chain.findIndex((entry) => entry.id === picked.tier.id)
-      const fallback = picked.chain.slice(startIndex + 1).map((entry) => entry.label)
-      return `difficulty ${difficulty} → ${picked.tier.label} (${tierRoute(picked.tier)}, ceiling ${picked.tier.ceiling})`
-        + (picked.degraded ? `\nNo tier covers ${difficulty}; starting at the strongest available and walking down on failure.` : '')
+      const fallback = picked.chain.slice(startIndex + 1).map((entry) => `T${entry.slot} ${entry.label}`)
+      return `difficulty ${difficulty} → T${picked.tier.slot} ${picked.tier.label} (${tierRoute(picked.tier)})`
+        + (picked.degraded
+          ? `\nT${picked.desired} is empty, disabled or failing; walked down to T${picked.tier.slot}.`
+          : '')
         + (fallback.length ? `\nFallback chain on failure: ${fallback.join(' → ')}` : '\nNo weaker tier to fall back to.')
         + `\n${picked.usable}/${picked.total} tiers usable.`
     },
@@ -1460,28 +1521,32 @@ export function apply(ctx, config) {
 
     if (body?.action === 'clear') {
       const all = readFailures(cwd, cfg)
+      const ladder = await readLadder(modelsFileOf())
+      const tier = body.id ? ladder.tiers.find((entry) => entry.id === String(body.id)) : undefined
+      const drop = new Set()
+      if (body.id) {
+        drop.add(String(body.id))
+        if (tier) drop.add(`route:${tierRoute(tier)}`)
+      }
       const next = body.id
-        ? Object.fromEntries(Object.entries(all).filter(([key]) => key !== String(body.id)))
+        ? Object.fromEntries(Object.entries(all).filter(([key]) => !drop.has(key)))
         : {}
       await mkdir(stateDirOf(), { recursive: true })
       await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(next, null, 2)}\n`, 'utf8')
-      if (body.id) {
-        const ladder = await readLadder(modelsFileOf())
-        const tier = ladder.tiers.find((entry) => entry.id === String(body.id))
-        if (tier && tier.enabled === false) {
-          tier.enabled = true
-          await writeLadder(modelsFileOf(), ladder)
-        }
+      if (tier && tier.enabled === false) {
+        tier.enabled = true
+        await writeLadder(modelsFileOf(), ladder)
       }
       return settingsState(cwd)
     }
 
     if (body?.action === 'move') {
-      const from = ladder.tiers.findIndex((tier) => tier.id === tierId)
-      if (from < 0) throw new Error(`no tier ${tierId}`)
-      const to = Math.min(Math.max(Number(body.to) || 0, 0), ladder.tiers.length - 1)
-      const [tier] = ladder.tiers.splice(from, 1)
-      ladder.tiers.splice(to, 0, tier)
+      const tier = ladder.tiers.find((entry) => entry.id === tierId)
+      if (!tier) throw new Error(`no tier ${tierId}`)
+      const target = Math.min(10, Math.max(1, Math.round(Number(body.to)) || 1))
+      const occupant = ladder.tiers.find((entry) => entry.id !== tier.id && entry.slot === target)
+      if (occupant) occupant.slot = tier.slot
+      tier.slot = target
     } else if (body?.action === 'enable') {
       const tier = ladder.tiers.find((entry) => entry.id === tierId)
       if (!tier) throw new Error(`no tier ${tierId}`)
@@ -1491,22 +1556,27 @@ export function apply(ctx, config) {
       ladder.tiers = ladder.tiers.filter((entry) => entry.id !== tierId)
       if (ladder.tiers.length === before) throw new Error(`no tier ${tierId}`)
     } else if (body?.action === 'add') {
-      if (ladder.tiers.length >= 10) throw new Error('the ladder holds at most 10 tiers; remove one first')
-      const tier = normalizeTier(body.tier ?? {}, ladder.tiers.length)
+      const used = new Set(ladder.tiers.map((entry) => entry.slot))
+      if (used.size >= 10) throw new Error('all ten slots are taken; remove one first')
+      let freeSlot = 1
+      while (used.has(freeSlot)) freeSlot += 1
+      const tier = normalizeTier({ ...(body.tier ?? {}), slot: Number(body.tier?.slot) || freeSlot }, freeSlot - 1)
+      const knownBad = readFailures(cwd, cfg)[`route:${tierRoute(tier)}`]
+      if (failureActive(knownBad, cfg)) {
+        throw new Error(`that configuration is marked failed (${String(knownBad.error).slice(0, 100)}); fix it before adding it to the ladder`)
+      }
       const taken = new Set(ladder.tiers.map((entry) => entry.id))
       if (taken.has(tier.id)) {
         let next = ladder.tiers.length + 1
         while (taken.has(`t${next}`)) next += 1
         tier.id = `t${next}`
       }
-      const at = Number.isInteger(body.tier?.rank)
-        ? Math.min(Math.max(Number(body.tier.rank), 0), ladder.tiers.length)
-        : ladder.tiers.length
-      ladder.tiers.splice(at, 0, tier)
+      ladder.tiers.push(tier)
     } else {
       throw new Error(`unknown action ${body?.action}`)
     }
 
+    renumber(ladder.tiers)
     await writeLadder(file, ladder)
     return settingsState()
   }
@@ -1994,7 +2064,7 @@ export function apply(ctx, config) {
         // Mark the tier and take it out of rotation whatever happens next: the
         // failure is a fact about the model, not about this retry decision.
         if (tier?.id) {
-          recordFailure(cwd, cfg, tier.id, stop).catch(() => {})
+          recordFailure(cwd, cfg, [tier.id, `route:${tierRoute(tier)}`], stop).catch(() => {})
           disableTier(cwd, cfg, tier.id).catch(() => {})
         }
         if (!cfg.retryOnFailure) return
