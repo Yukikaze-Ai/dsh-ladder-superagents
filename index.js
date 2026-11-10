@@ -1775,6 +1775,7 @@ export function apply(ctx, config) {
           error: String(entry.error ?? ''),
           at: Number(entry.at) || 0,
         })),
+      supaSessions: readEnabledSessions(),
     }
   }
 
@@ -1805,6 +1806,15 @@ export function apply(ctx, config) {
         editor.edit(entry, (current) => ({ ...current, ...changes })).catch(() => {})
       }, 150)
       return { ...(await settingsState(cwd)), pending: changes }
+    }
+
+    if (body?.action === 'session') {
+      const id = String(body.id ?? '').trim()
+      if (!id) throw new Error('a session id is required')
+      const next = readEnabledSessions().filter((entry) => entry !== id)
+      if (body.enabled !== false) next.push(id)
+      await writeEnabledSessions(next)
+      return settingsState(cwd)
     }
 
     if (body?.action === 'reset') {

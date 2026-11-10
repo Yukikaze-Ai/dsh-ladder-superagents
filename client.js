@@ -692,6 +692,78 @@ window.__ModuleLoader__.load({
       )
     }
 
+    function SupaSessionToggle(props) {
+      const sessionId = String(props?.sessionId ?? props?.session?.id ?? '')
+      const [state, setState] = useState(null)
+      const [busy, setBusy] = useState(false)
+
+      useEffect(() => {
+        let alive = true
+        request('/supa/state').then((next) => {
+          if (alive) setState(next)
+        }).catch(() => {})
+        return () => {
+          alive = false
+        }
+      }, [])
+
+      if (!sessionId || !state) return null
+      const mode = state.config?.mode ?? 'session'
+      // "all" means the plugin answers for every session, so the pill is a
+      // read-only status there; only "session" mode makes it a switch.
+      const enabled = mode === 'all'
+        ? true
+        : (state.supaSessions ?? []).some((id) => String(id) === sessionId)
+      const locked = mode !== 'session'
+
+      const toggle = async () => {
+        if (locked || busy) return
+        setBusy(true)
+        try {
+          setState(await request('/supa/action', { action: 'session', id: sessionId, enabled: !enabled }))
+        } catch {
+          // leave the pill as it was
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      return h('button', {
+        type: 'button',
+        onClick: toggle,
+        disabled: locked || busy,
+        title: locked
+          ? `SupA answers in every session (mode: ${mode})`
+          : enabled
+            ? 'SupA is on in this session — click to turn it off'
+            : 'SupA is off in this session — click to turn it on',
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          height: 26,
+          padding: '0 10px',
+          borderRadius: 13,
+          border: `1px solid ${enabled ? 'var(--dsw-alias-brand-primary, #4f46e5)' : 'var(--dsw-alias-border-l1, #d8dbe2)'}`,
+          background: enabled ? 'var(--dsw-alias-bg-layer-2, rgba(79,70,229,.10))' : 'transparent',
+          color: enabled ? 'var(--dsw-alias-brand-primary, #4f46e5)' : 'var(--dsw-alias-label-secondary, #6b7280)',
+          fontSize: 12,
+          fontWeight: 500,
+          cursor: locked ? 'default' : 'pointer',
+          opacity: busy ? 0.6 : 1,
+        },
+      },
+      h('span', {
+        style: {
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: enabled ? 'currentColor' : 'var(--dsw-alias-state-idle-primary, #9aa0aa)',
+        },
+      }),
+      'SupA')
+    }
+
     return {
       inject: ['slots'],
       apply(ctx) {
@@ -701,6 +773,14 @@ window.__ModuleLoader__.load({
           order: 25,
           label: 'dsh-ladder-superagents',
         }, SupaSettings))
+
+        // One control in the session header: the human switch for `mode: session`.
+        ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+          name: 'conversation.session.header.utilities',
+          id: 'ladder-superagents',
+          order: 10,
+          label: 'SupA',
+        }, SupaSessionToggle))
       },
     }
   },
