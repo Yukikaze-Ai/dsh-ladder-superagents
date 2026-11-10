@@ -1,9 +1,8 @@
 {
   "name": "dsh-supa",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "description": "SupA session layer for DeepSeek Harness: never-block, shared context ledger, parent-decided child context, difficulty routing.",
+  "description": "Tiered subagents for DeepSeek Harness: a ten-slot model ladder, difficulty routing, automatic fallback and real-call verification. Windows-only in 0.1.",
   "main": "index.js",
   "exports": {
     ".": "./index.js",
@@ -20,6 +19,23 @@
     "README.md",
     "LICENSE"
   ],
+  "os": [
+    "win32"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "subagent",
+    "model-routing",
+    "codex",
+    "claude-code"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yukikaze-Ai/dsh-supa.git"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

@@ -3,7 +3,9 @@
       name: 'dsh-supa'
       config:
         enabled: true
-        autoApprove: true
+        # Inherited: the plugin answers no approval by itself. Set true only if
+        # you accept that every request is granted without a human.
+        autoApprove: false
         denyBlockingQuestions: false
         continueWhenBlocked: true
         continueOnOpenTodos: false

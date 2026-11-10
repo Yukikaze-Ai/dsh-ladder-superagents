@@ -1,6 +1,17 @@
 # dsh-supa
 
-A DeepSeek Harness bundle that turns every session in the profile into a **SupA**
+> **0.1 is Windows-only.** CLI discovery, `.cmd` launching and path handling are
+> written for Windows. On macOS and Linux the llm tiers work, the CLI tiers do
+> not. `os: ["win32"]` in `package.json` says so.
+>
+> Of the ten CLI drivers, only **codex** is verified. kimi, claude, gemini,
+> qwen, cursor, opencode, aider, copilot and goose are implemented but were
+> never run against a working install — treat them as experimental.
+>
+> Approval behaviour is **inherited**: the plugin answers no approval request
+> by itself. `autoApprove: true` is an explicit opt-in, not a default.
+
+A DeepSeek Harness bundle that turns selected sessions in the profile into a **SupA**
 session, following the concept of
 [`deepseek-ai/dsh-superagent-prototype`](https://github.com/deepseek-ai/dsh-superagent-prototype).
 
@@ -56,7 +67,7 @@ Set on the `supa` row in the bundle's `cordis.patch.yml`:
 | `mode` | `session` | `session` = opt-in per session via `supa_session enable`; `all` = every session; `root` = only sessions without a parent; `preset` = only listed `presets` |
 | `presets` | `[]` | Preset ids for `mode: preset` |
 | `ledgerDir` | `.dsh-supa` | Ledger directory, relative to the session working directory |
-| `autoApprove` | `true` | Decide approvals instead of asking a human |
+| `autoApprove` | `false` | Inherit the harness policy. `true` makes SupA answer every approval itself |
 | `denyBlockingQuestions` | `false` | Refuse `ask_user_question` instead of letting it ask |
 | `continueWhenBlocked` | `true` | Wake a `blocked` turn |
 | `maxBlockedNudges` | `3` | Nudges per `nudgeWindowMs` |
@@ -257,7 +268,8 @@ MIT — see [LICENSE](LICENSE).
 
 ## Risks you should know
 
-- `autoApprove: true` grants every approval request, including sandbox
+- Approval behaviour is inherited by default. Setting `autoApprove: true`
+  grants every approval request, including sandbox
   escalation. That is what "never blocked" costs. Turn it off and the SupA
   simply cannot escalate; it gets a deterministic rejection instead.
 - A `codex` tier is a plain child process, not a Harness session: neither the

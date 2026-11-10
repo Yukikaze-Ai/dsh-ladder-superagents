@@ -37,8 +37,12 @@ const DEFAULTS = {
   presets: [],
   /** Directory (relative to the session cwd) holding the shared ledger. */
   ledgerDir: '.dsh-supa',
-  /** Decide approval requests instead of asking a human. */
-  autoApprove: true,
+  /**
+   * Approval behaviour is inherited by default: the plugin answers nothing and
+   * the harness policy decides. Only an explicit `true` makes SupA grant every
+   * request itself, and that is a deliberate opt-in, never a shipped default.
+   */
+  autoApprove: false,
   /** Highest authority a root SupA holds without asking the human: 'workspace' | 'full'. */
   authority: 'workspace',
   /** Refuse `ask_user_question` with a "decide and record" directive. */
@@ -1208,7 +1212,7 @@ export function apply(ctx, config) {
     }
   }
 
-  if (cfg.autoApprove) {
+  if (cfg.autoApprove === true) {
     ctx.on('approval/request', async (request, next) => {
       const agent = request?.agent
       if (!agent || !isSupa(agent)) return next()
@@ -1726,7 +1730,8 @@ export function apply(ctx, config) {
       drivers: Object.keys(CLI_DRIVERS),
       catalog,
       config: {
-        mode: cfg.mode,        autoApprove: cfg.autoApprove,
+        mode: cfg.mode,
+        autoApprove: cfg.autoApprove === true,
         authority: cfg.authority,
         retryOnFailure: cfg.retryOnFailure,
         denyBlockingQuestions: cfg.denyBlockingQuestions,
