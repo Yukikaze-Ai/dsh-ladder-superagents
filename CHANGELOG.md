@@ -2,7 +2,7 @@
 
 All notable changes to this plugin. Dates are ISO.
 
-## 0.1.3 — unreleased
+## 0.2.0 — 2026-11-10
 
 Closes a hole in the ladder, makes a child a worker rather than a second SupA,
 and adds usage statistics and a test suite.
