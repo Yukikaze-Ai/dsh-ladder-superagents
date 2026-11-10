@@ -102,7 +102,7 @@ const CHARTER = [
   '',
   'Route work by difficulty. Rate a task 1-10 (1 = a 4B model can do it, 10 = contradictory or missing information needing judgment) and pass `difficulty` to `supa_spawn`: the ladder picks the weakest tier that still covers the score, and degrades to the strongest available tier when nothing covers it. `supa_models list` shows the ladder and the routes the runtime actually advertises.',
   'Delegate execution, not only research. A command sequence, a build, a test run, or a multi-file change belongs in a child: spawn it, keep working on something else, then drain `supa_inbox` and pick what matters. Keep in your own hands only the quick single step whose result you need in the same breath, and the decisions about what to do next.',
-  'Work style: act, do not ask. Never wait inside a turn: a command that sleeps, polls, or builds for more than a few seconds belongs in the background (`run_in_background`) or in a child; come back for its result instead of sitting on it. If a tool fails, change approach rather than waiting. End a turn only when the work is done, when you are waiting on a child that will wake you, or when the remaining choice is irreversible.',
+  'Work style: act, do not ask. Never wait inside a turn: a command that sleeps, polls, or builds for more than a few seconds belongs in the background (`run_in_background`) or in a child; come back for its result instead of sitting on it. Check a thing once — a registry, a build, a deployment — and if it has not changed, end the turn and say when to look again; never poll in a loop while the user waits. If a tool fails, change approach rather than waiting. End a turn only when the work is done, when you are waiting on a child that will wake you, or when the remaining choice is irreversible.',
 ].join('\n')
 
 const CHILD_CHARTER = [
@@ -1145,8 +1145,9 @@ export function apply(ctx, config) {
   }
 
   // A foreground sleep blocks the whole turn: nothing else happens until it
-  // returns. Make the model take the background route instead.
-  const SLEEP_PATTERN = /\b(?:sleep\s+(\d{2,})|Start-Sleep\s+(?:-Seconds\s+)?(\d{2,})|timeout\s+\/t\s+(\d{2,}))\b/i
+  // returns. Sum them, so a polling loop of short sleeps is caught too.
+  const SLEEP_PATTERN = /\b(?:sleep\s+(\d+(?:\.\d+)?)|Start-Sleep\s+(?:-Seconds\s+)?(\d+(?:\.\d+)?)|timeout\s+\/t\s+(\d+))\b/gi
+  const POLL_LOOP = /\b(?:while|until|for)\b[\s\S]{0,200}?\b(?:sleep|Start-Sleep)\b/i
   ctx.effect(() => ctx.tools.guard((execution) => {
     if (!execution || !isSupa(execution.agent)) return undefined
     if (execution.name !== 'pwsh' && execution.name !== 'bash') return undefined
@@ -1154,12 +1155,21 @@ export function apply(ctx, config) {
     if (!args || typeof args !== 'object') return undefined
     if (args.run_in_background === true) return undefined
     const command = String(args.command ?? '')
-    const match = command ? SLEEP_PATTERN.exec(command) : null
-    if (!match) return undefined
-    const seconds = Number(match[1] ?? match[2] ?? match[3] ?? 0)
-    if (!Number.isFinite(seconds) || seconds < 30) return undefined
-    return `This command sleeps ${seconds}s in the foreground, which blocks the whole turn. `
-      + 'Re-run it with `run_in_background: true`, or hand it to a child with `supa_spawn` and keep working; the result lands in `supa_inbox`.'
+    if (!command) return undefined
+
+    let total = 0
+    for (const match of command.matchAll(SLEEP_PATTERN)) {
+      total += Number(match[1] ?? match[2] ?? match[3] ?? 0) || 0
+    }
+    const looping = POLL_LOOP.test(command)
+    if (total < 30 && !looping) return undefined
+
+    const what = looping
+      ? 'This command polls in a loop with a sleep'
+      : `This command sleeps about ${Math.round(total)}s in the foreground`
+    return `${what}, which blocks the whole turn. `
+      + 'Check once. If the answer is not there yet, end the turn and say when to check again (or run it with `run_in_background: true`, '
+      + 'or hand it to a child with `supa_spawn`); the result lands in `supa_inbox`.'
   }))
 
   // ------------------------------------------------------------- sessions
