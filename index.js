@@ -1445,7 +1445,7 @@ export function apply(ctx, config) {
     const targets = ladder.tiers
       .filter((tier) => isCliTier(tier) && driverOf(tier) === 'codex' && tier.model)
       .map((tier) => ({ model: tier.model, effort: tier.reasoningEffort }))
-    if (targets.length === 0) throw new Error('nothing to pin: name a model, or give a codex tier a model')
+    if (targets.length === 0) throw new Error('the ladder has no CLI tier to pin; add a codex tier first, or pin a catalog model')
     return targets
   }
 

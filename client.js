@@ -175,7 +175,7 @@ window.__ModuleLoader__.load({
         }, confirming ? 'Sure?' : '✕')))
     }
 
-    function Catalog({ catalog, llm, busy, onScan, onPin, onAdd }) {
+    function Catalog({ catalog, llm, busy, onScan, onPin, onAdd, canPinTiers }) {
       const [pending, setPending] = useState('')
       const [adding, setAdding] = useState('')
       const run = async (kind, body) => {
@@ -201,7 +201,14 @@ window.__ModuleLoader__.load({
           h('div', { style: s.sectionTitle }, 'Codex model catalog'),
           h('div', { style: s.actions },
             h('button', { style: s.btn, onClick: () => run('scan', { action: 'scan' }), disabled: busyNow }, 'Scan'),
-            h('button', { style: s.btn, onClick: () => run('pin-tiers', { action: 'pin' }), disabled: busyNow }, 'Pin tiers'))),
+            h('button', {
+              style: canPinTiers ? s.btn : { ...s.btn, opacity: 0.4 },
+              onClick: () => run('pin-tiers', { action: 'pin' }),
+              disabled: busyNow || !canPinTiers,
+              title: canPinTiers
+                ? 'Pin the codex tiers currently in the ladder'
+                : 'The ladder has no CLI tier to pin — pin a catalog model instead',
+            }, 'Pin tiers'))),
         h('div', { style: s.warn },
           'Scan reads the catalog only. Pinning — tiers or one model — sends one real call per model+effort configuration, so it consumes that model\'s tokens/usage.'),
         pending
@@ -560,7 +567,15 @@ window.__ModuleLoader__.load({
             h('button', { style: s.btn, onClick: () => act({ action: 'clear', id: failure.id }) }, 'Restore'))))
           : null,
 
-        h(Catalog, { catalog: state.catalog, llm: state.llm, busy, onScan: act, onPin: act, onAdd: act }),
+        h(Catalog, {
+          catalog: state.catalog,
+          llm: state.llm,
+          busy,
+          onScan: act,
+          onPin: act,
+          onAdd: act,
+          canPinTiers: tiers.some((tier) => (tier.kind === 'cli' || tier.kind === 'codex') && tier.model),
+        }),
         manualOpen
           ? h(AddForm, { drivers: state.drivers, onAdd: act, disabled: tiers.length >= 10 })
           : h('button', {
