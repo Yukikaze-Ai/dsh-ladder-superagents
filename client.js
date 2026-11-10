@@ -176,37 +176,58 @@ window.__ModuleLoader__.load({
     }
 
     function Catalog({ catalog, llm, busy, onScan, onPin }) {
+      const [pending, setPending] = useState('')
+      const run = async (kind, body) => {
+        setPending(kind)
+        try {
+          await onScan(body)
+        } finally {
+          setPending('')
+        }
+      }
       const scanned = catalog?.at ? new Date(catalog.at).toLocaleTimeString() : ''
       const verdictOf = (slug, effort) => catalog?.probes?.[`${slug}@${effort}`]
+      const busyNow = busy || Boolean(pending)
+      const pendingText = pending.startsWith('pin:')
+        ? `Pinning ${pending.slice(4)} — one real call, this can take a minute…`
+        : pending === 'pin-tiers'
+          ? 'Pinning the ladder tiers — one real call each…'
+          : 'Scanning `codex debug models`…'
+
       return h('div', { style: s.card },
+        h('style', null, '@keyframes supaPulse{0%,100%{opacity:.35}50%{opacity:1}}'),
         h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
           h('div', { style: s.sectionTitle }, 'Codex model catalog'),
           h('div', { style: s.actions },
-            h('button', { style: s.btn, onClick: () => onScan({ action: 'scan' }), disabled: busy }, 'Scan'),
-            h('button', { style: s.btn, onClick: () => onPin({ action: 'pin' }), disabled: busy }, 'Pin tiers'))),
+            h('button', { style: s.btn, onClick: () => run('scan', { action: 'scan' }), disabled: busyNow }, 'Scan'),
+            h('button', { style: s.btn, onClick: () => run('pin-tiers', { action: 'pin' }), disabled: busyNow }, 'Pin tiers'))),
         h('div', { style: s.warn },
           'Scan reads the catalog only. Pinning — tiers or one model — sends one real call per model+effort configuration, so it consumes that model\'s tokens/usage.'),
-        catalog
-          ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-            h('div', { style: s.hint }, `${catalog.models.length} models · scanned ${scanned}`),
-            ...catalog.models.map((model) => h('div', {
-              key: model.slug,
-              style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
-            },
-            h('span', { style: { fontSize: 12, minWidth: 150, color: color.text } }, model.slug),
-            h('span', { style: s.chip }, model.visibility || '?'),
-            h('span', { style: { ...s.meta, flex: 1 } },
-              model.efforts.map((effort) => {
-                const verdict = verdictOf(model.slug, effort)
-                return `${effort}${verdict ? (verdict.ok ? ' ✓' : ' ✕') : ''}`
-              }).join('  ') || 'no efforts'),
-            h('button', {
-              style: s.btn,
-              onClick: () => onPin({ action: 'pin', model: model.slug }),
-              disabled: busy,
-              title: `Test every effort of ${model.slug} with a real call`,
-            }, 'Pin'))))
-          : h('div', { style: s.hint }, 'No catalog cached. Scan to read the model list.'),
+        pending
+          ? h('div', {
+            style: { fontSize: 12, color: color.muted, animation: 'supaPulse 1.2s ease-in-out infinite', padding: '8px 0' },
+          }, pendingText)
+          : catalog
+            ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+              h('div', { style: s.hint }, `${catalog.models.length} models · scanned ${scanned}`),
+              ...catalog.models.map((model) => h('div', {
+                key: model.slug,
+                style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
+              },
+              h('span', { style: { fontSize: 12, minWidth: 150, color: color.text } }, model.slug),
+              h('span', { style: s.chip }, model.visibility || '?'),
+              h('span', { style: { ...s.meta, flex: 1 } },
+                model.efforts.map((effort) => {
+                  const verdict = verdictOf(model.slug, effort)
+                  return `${effort}${verdict ? (verdict.ok ? ' ✓' : ' ✕') : ''}`
+                }).join('  ') || 'no efforts'),
+              h('button', {
+                style: s.btn,
+                onClick: () => run(`pin:${model.slug}`, { action: 'pin', model: model.slug }),
+                disabled: busyNow,
+                title: `Test every effort of ${model.slug} with a real call`,
+              }, 'Pin'))))
+            : h('div', { style: s.hint }, 'No catalog cached. Scan to read the model list.'),
         llm?.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 6 } },
             h('div', { style: s.hint }, 'Harness routes (read live from the llm service)'),
@@ -215,8 +236,8 @@ window.__ModuleLoader__.load({
               style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'nowrap' },
             },
             h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, `${route.provider}/${route.model}`),
-            h('span', { style: s.chip }, route.defaultEffort ? `default ${route.defaultEffort}` : 'no default'),
-            h('span', { style: { ...s.meta, flex: 1 } }, route.efforts.length ? route.efforts.join('  ') : 'no reasoning metadata'))))
+            h('span', { style: s.chip }, route.defaultEffort ? `default effort ${route.defaultEffort}` : 'no default effort'),
+            h('span', { style: { ...s.meta, flex: 1 } }, route.efforts.length ? `efforts ${route.efforts.join(' / ')}` : 'no reasoning metadata'))))
           : null,
       )
     }
