@@ -186,6 +186,7 @@ window.__ModuleLoader__.load({
       const [pending, setPending] = useState('')
       const [adding, setAdding] = useState('')
       const [verifiedOnly, setVerifiedOnly] = useState(false)
+      const [confirming, setConfirming] = useState(null)
       const failedRoutes = new Set((failures ?? []).map((failure) => failure.route))
       const failedFor = (slug, effort) => failedRoutes.has(`codex ${slug}@${effort}`)
       const run = async (kind, body) => {
@@ -230,14 +231,16 @@ window.__ModuleLoader__.load({
               style: s.btn,
               onClick: () => run('scan', { action: 'scan' }),
               disabled: busyNow,
-              title: 'Read the model catalog from the CLI. Free: no request is sent to any model.',
             }, 'Scan'),
             h('button', {
               style: canPinTiers ? s.btn : { ...s.btn, opacity: 0.4 },
-              onClick: () => run('pin-tiers', { action: 'pin' }),
+              onClick: () => setConfirming({
+                run: () => run('pin-tiers', { action: 'pin' }),
+                text: 'Pinning the ladder tiers sends one real call per codex configuration in the ladder. Each call consumes that model\'s tokens/usage.',
+              }),
               disabled: busyNow || !canPinTiers,
               title: canPinTiers
-                ? 'Verify the codex tiers in the ladder: one real call per configuration, so it consumes that model\'s tokens'
+                ? 'Pin the codex tiers currently in the ladder'
                 : 'The ladder has no CLI tier to pin — pin a catalog model instead',
             }, 'Pin tiers'))),
         pending
@@ -283,9 +286,12 @@ window.__ModuleLoader__.load({
                       }).join('  ') || 'no efforts'),
                     h('button', {
                       style: s.btn,
-                      onClick: () => run(`pin:${model.slug}`, { action: 'pin', model: model.slug }),
+                      onClick: () => setConfirming({
+                        run: () => run(`pin:${model.slug}`, { action: 'pin', model: model.slug }),
+                        text: `Testing ${model.slug} sends one real call per effort (${model.efforts.join(', ')}). Each call consumes that model's tokens/usage.`,
+                      }),
                       disabled: busyNow,
-                      title: `Test every effort of ${model.slug} with a real call`,
+                      title: `Test every effort of ${model.slug}`,
                     }, 'Pin'),
                     h('button', {
                       style: s.btn,
@@ -347,6 +353,36 @@ window.__ModuleLoader__.load({
                 },
               }),
             }, 'Add'))))
+          : null,
+        confirming
+          ? h('div', {
+            style: {
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,.35)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 60,
+            },
+            onClick: () => setConfirming(null),
+          },
+          h('div', {
+            style: { ...s.card, width: 380, maxWidth: '90vw', boxShadow: '0 12px 48px rgba(0,0,0,.28)' },
+            onClick: (event) => event.stopPropagation(),
+          },
+          h('div', { style: s.sectionTitle }, 'This spends tokens'),
+          h('div', { style: { fontSize: 12, color: color.muted, lineHeight: 1.6 } }, confirming.text),
+          h('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
+            h('button', { style: s.btn, onClick: () => setConfirming(null) }, 'Cancel'),
+            h('button', {
+              style: { ...s.btn, color: color.warn },
+              onClick: () => {
+                const spec = confirming
+                setConfirming(null)
+                spec.run()
+              },
+            }, 'Continue'))))
           : null,
       )
     }
