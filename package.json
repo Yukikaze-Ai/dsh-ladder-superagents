@@ -17,6 +17,10 @@
     "locale/*.json",
     "icon.svg",
     "README.md",
+    "CONTRIBUTING.md",
+    "ROADMAP.md",
+    "CHANGELOG.md",
+    "docs/*.md",
     "LICENSE"
   ],
   "os": [

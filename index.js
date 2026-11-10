@@ -473,8 +473,11 @@ function readEnabledSessions() {
 }
 
 async function writeEnabledSessions(list) {
+  // The list is a cache of enabled sessions, not a history: keep it bounded so
+  // it cannot grow for years and slow the per-turn read.
+  const bounded = list.slice(-200)
   await mkdir(stateDirOf(), { recursive: true })
-  await writeFile(sessionsFileOf(), `${JSON.stringify({ version: 1, enabled: list }, null, 2)}\n`, 'utf8')
+  await writeFile(sessionsFileOf(), `${JSON.stringify({ version: 1, enabled: bounded }, null, 2)}\n`, 'utf8')
 }
 
 function defaultLadder() {
@@ -1155,9 +1158,25 @@ export function apply(ctx, config) {
   // A foreground sleep blocks the whole turn, so the shell call is handed to a
   // child that runs it and reports into the parent's queue. The parent is not
   // asked to wait, and not asked to retry by hand either.
+  const handedOff = new Map()
+  const HAND_OFF_DEDUPE_MS = 60_000
+
   const handOffCommand = (agent, command, what = 'a blocking command') => {
     const subagents = ctx.get?.('subagents')
-    if (!subagents || !agent) return false
+    if (!subagents || !agent) return 'unavailable'
+
+    // A model that retries a denied command must not spawn a second child for
+    // the same work: the first one is still running.
+    const key = `${String(agent.session?.id ?? '')}\u0000${command}`
+    const at = handedOff.get(key)
+    if (at && Date.now() - at < HAND_OFF_DEDUPE_MS) return 'duplicate'
+    handedOff.set(key, Date.now())
+    if (handedOff.size > 50) {
+      for (const [entry, stamp] of handedOff) {
+        if (Date.now() - stamp > HAND_OFF_DEDUPE_MS) handedOff.delete(entry)
+      }
+    }
+
     const brief = [
       '## Assignment',
       'Your parent tried to run this in the foreground and it would block its turn, so it was handed to you.',
@@ -1178,7 +1197,25 @@ export function apply(ctx, config) {
       label: 'handed-off command',
       request,
       delivery: 'parent',
-    }).catch(() => {})
+    }).catch((error) => {
+      // The command never started. Say so in the queue instead of leaving the
+      // model believing a child is working on it.
+      handedOff.delete(key)
+      try {
+        const inbox = inboxFileFor(agent.session)
+        const record = {
+          id: newRecordId(),
+          at: nowIso(),
+          lane: 'handoff',
+          from: '',
+          kind: 'blocked',
+          text: `hand-off could not start: ${String(error?.message ?? error)}`,
+        }
+        appendFile(inbox, `${JSON.stringify(record)}\n`, 'utf8').catch(() => {})
+      } catch {
+        // nothing else to do
+      }
+    })
     try {
       const summary = command.replace(/\s+/g, ' ').trim().slice(0, 160)
       safeInject(agent, `起了一个子代理去跑（${what}）：\`${summary}\`。它跑完会把结果放进队列，到时候我再通知你。`)
@@ -1222,8 +1259,13 @@ export function apply(ctx, config) {
     }
     if (!what) return undefined
 
-    if (handOffCommand(execution.agent, command, what)) {
+    const handed = handOffCommand(execution.agent, command, what)
+    if (handed === 'spawned') {
       return `Handed to a child instead of blocking this turn (${what}). It runs the command and reports the output into \`supa_inbox\`; do not wait for it, keep working.`
+    }
+    if (handed === 'duplicate') {
+      return `This exact command was handed to a child less than a minute ago and is still running. `
+        + 'Do not send it again; its result lands in `supa_inbox`.'
     }
     return `This command is ${what} in the foreground, which blocks the whole turn. `
       + 'Run it with `run_in_background: true`, or hand it to a child with `supa_spawn`.'
