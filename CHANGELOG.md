@@ -46,6 +46,7 @@ First published version. Windows only.
 ### Known limits
 
 - Windows only.
-- Nine of ten CLI drivers are unverified.
+- Nine of ten CLI drivers are unverified. `claude` needs a paid Claude
+  subscription and `kimi` needs a Kimi account; neither was run here.
 - No automated tests.
 - The settings routes do not authenticate their caller.

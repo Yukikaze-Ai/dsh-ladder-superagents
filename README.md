@@ -5,8 +5,10 @@
 > not. `os: ["win32"]` in `package.json` says so.
 >
 > Of the ten CLI drivers, only **codex** is verified. kimi, claude, gemini,
-> qwen, cursor, opencode, aider, copilot and goose are implemented but were
-> never run against a working install — treat them as experimental.
+> qwen, cursor, opencode, aider, copilot and goose are implemented from each
+> CLI's documented invocation but were never run against a working account —
+> claude in particular needs a paid Claude subscription, and kimi needs a Kimi
+> account. Treat all nine as experimental.
 >
 > Approval behaviour is **inherited**: the plugin answers no approval request
 > by itself. `autoApprove: true` is an explicit opt-in, not a default.
