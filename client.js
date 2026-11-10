@@ -889,9 +889,9 @@ window.__ModuleLoader__.load({
       // window. Wall-clock position is deliberately dropped: a five-second call
       // next to a twenty-minute gap is invisible on a time axis.
       const finished = recent.filter((record) => Number(record.ms) > 0)
-      const slowest = finished.reduce((max, record) => Math.max(max, Number(record.ms)), 0) || 1
+      const axisMs = Math.max(1, Number(stats.slowestMs) || 0)
       const laneRows = finished.slice(0, 20).map((record, index) => {
-        const width = Math.max(2, (Number(record.ms) / slowest) * 100)
+        const width = Math.max(1, (Number(record.ms) / axisMs) * 100)
         return h('div', {
           key: `lane-${record.at}-${index}`,
           style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap' },
@@ -943,7 +943,9 @@ window.__ModuleLoader__.load({
           h('div', { style: s.sectionTitle }, '调用时间线'),
           laneRows.length === 0
             ? h('div', { style: s.hint }, '还没有已完成的调用。')
-            : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, ...laneRows)),
+            : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+              h('div', { style: { ...s.meta, fontSize: 11 } }, `刻度 0 ─ ${axisMs}ms（历史最慢一次）`),
+              ...laneRows)),
 
         h('div', { style: s.card },
           h('div', { style: s.sectionTitle }, '最近调用'),

@@ -569,7 +569,14 @@ function summarizeUsage(records) {
       outputTokens: entry.outputTokens ?? 0,
       tasks: entry.tasks.slice(-3),
     }))
-  return { records: records.length, summary, recent: records.slice(-40).reverse() }
+  return {
+    records: records.length,
+    summary,
+    // A fixed axis for the duration bars: the slowest call ever recorded, so a
+    // bar keeps its length across refreshes instead of rescaling every time.
+    slowestMs: records.reduce((max, record) => Math.max(max, Number(record.ms) || 0), 0),
+    recent: records.slice(-40).reverse(),
+  }
 }
 
 function defaultLadder() {
