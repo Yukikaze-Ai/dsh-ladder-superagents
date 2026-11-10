@@ -770,6 +770,79 @@ window.__ModuleLoader__.load({
       'SupA')
     }
 
+    function SupaStatsView() {
+      const [stats, setStats] = useState(null)
+      const [error, setError] = useState('')
+      const [busy, setBusy] = useState(false)
+
+      const load = useCallback(async () => {
+        setBusy(true)
+        try {
+          setStats(await request('/supa/stats'))
+          setError('')
+        } catch (failure) {
+          setError(String(failure?.message ?? failure))
+        } finally {
+          setBusy(false)
+        }
+      }, [])
+
+      useEffect(() => {
+        load()
+      }, [load])
+
+      if (error) return h('div', { style: s.page }, h('div', { style: s.error }, `stats: ${error}`))
+      if (!stats) return h('div', { style: s.page }, h('div', { style: s.hint }, 'Loading usage…'))
+
+      const summary = stats.summary ?? []
+      const recent = stats.recent ?? []
+      const totalDone = summary.reduce((sum, row) => sum + row.done, 0)
+      const totalFailed = summary.reduce((sum, row) => sum + row.failed, 0)
+
+      return h('div', { style: { ...s.page, gap: 10 } },
+        h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
+          h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
+            h('div', { style: s.title }, '模型使用统计'),
+            h('div', { style: s.sub }, `${stats.records} 条记录 · 完成 ${totalDone} · 失败 ${totalFailed}`)),
+          h('button', { style: s.btn, onClick: load, disabled: busy }, 'Refresh')),
+
+        h('div', { style: s.card },
+          h('div', { style: s.sectionTitle }, '每个档位'),
+          summary.length === 0
+            ? h('div', { style: s.hint }, '还没有调用记录。派一次任务之后这里就会有。')
+            : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+              ...summary.map((row) => h('div', {
+                key: row.route,
+                style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
+              },
+              h('span', { style: { fontSize: 12, minWidth: 34, color: color.text } }, `T${row.slot ?? '?'}`),
+              h('span', { style: { ...s.meta, flex: 1, color: color.text } }, row.route),
+              h('span', { style: s.meta }, `invoked ${row.started}`),
+              h('span', { style: { ...s.meta, color: color.ok } }, `done ${row.done}`),
+              h('span', { style: { ...s.meta, color: row.failed ? color.bad : color.muted } }, `failed ${row.failed}`),
+              h('span', { style: s.meta }, `avg ${row.avgMs}ms`)))),
+
+        h('div', { style: s.card },
+          h('div', { style: s.sectionTitle }, '最近调用'),
+          recent.length === 0
+            ? h('div', { style: s.hint }, '—')
+            : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+              ...recent.map((record, index) => h('div', {
+                key: `${record.at}-${index}`,
+                style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'nowrap', fontSize: 12 },
+              },
+              h('span', { style: { ...s.meta, minWidth: 150 } }, new Date(record.at).toLocaleString()),
+              h('span', {
+                style: {
+                  minWidth: 46,
+                  color: record.kind === 'failed' ? color.bad : record.kind === 'done' ? color.ok : color.muted,
+                },
+              }, String(record.kind ?? '?')),
+              h('span', { style: { ...s.meta, minWidth: 34 } }, `T${record.slot ?? '?'}`),
+              h('span', { style: { ...s.meta, flex: 1, color: color.text } }, String(record.task ?? '').slice(0, 60)),
+              h('span', { style: s.meta }, record.ms ? `${record.ms}ms` : '')))))
+    }
+
     return {
       inject: ['slots'],
       apply(ctx) {
@@ -787,6 +860,14 @@ window.__ModuleLoader__.load({
           order: 10,
           label: 'SupA',
         }, SupaSessionToggle))
+
+        // The usage view beside 对话 / 轨迹 / 上下文 / 编队.
+        ctx.slots.inject('conversation.view', () => ctx.slots.register({
+          name: 'conversation.view',
+          id: 'supa-stats',
+          order: 40,
+          label: '统计',
+        }, SupaStatsView))
       },
     }
   },

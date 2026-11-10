@@ -517,6 +517,36 @@ function readUsage(limit = 2000) {
   }
 }
 
+/** Aggregate the usage log once, for both `supa_stats` and the Stats view. */
+function summarizeUsage(records) {
+  const byRoute = new Map()
+  for (const record of records) {
+    const key = String(record.route ?? 'inherit')
+    const entry = byRoute.get(key) ?? { route: key, slot: record.slot ?? null, started: 0, done: 0, failed: 0, ms: [], tasks: [] }
+    if (record.kind === 'start') {
+      entry.started += 1
+      if (record.task) entry.tasks.push(String(record.task))
+    }
+    if (record.kind === 'done') entry.done += 1
+    if (record.kind === 'failed') entry.failed += 1
+    if (Number(record.ms)) entry.ms.push(Number(record.ms))
+    if (!entry.slot && record.slot) entry.slot = record.slot
+    byRoute.set(key, entry)
+  }
+  const summary = [...byRoute.values()]
+    .sort((left, right) => left.slot - right.slot || right.started - left.started)
+    .map((entry) => ({
+      route: entry.route,
+      slot: entry.slot,
+      started: entry.started,
+      done: entry.done,
+      failed: entry.failed,
+      avgMs: entry.ms.length ? Math.round(entry.ms.reduce((sum, value) => sum + value, 0) / entry.ms.length) : 0,
+      tasks: entry.tasks.slice(-3),
+    }))
+  return { records: records.length, summary, recent: records.slice(-40).reverse() }
+}
+
 function defaultLadder() {
   return { version: 1, tiers: DEFAULT_TIERS.map((tier, index) => normalizeTier(tier, index)) }
 }
@@ -1437,6 +1467,7 @@ export function apply(ctx, config) {
     async execute(args) {
       const records = readUsage(5000)
       if (records.length === 0) return `no usage recorded yet (${usageFileOf()})`
+      const { summary } = summarizeUsage(records)
 
       if (args.action === 'recent') {
         const limit = Math.min(100, Math.max(1, Number(args.limit) || 20))
@@ -1449,28 +1480,9 @@ export function apply(ctx, config) {
         }).join('\n')
       }
 
-      const byRoute = new Map()
-      for (const record of records) {
-        const key = String(record.route ?? 'inherit')
-        const entry = byRoute.get(key) ?? { route: key, slot: record.slot ?? null, started: 0, done: 0, failed: 0, ms: [], tasks: [] }
-        if (record.kind === 'start') {
-          entry.started += 1
-          if (record.task) entry.tasks.push(String(record.task))
-        }
-        if (record.kind === 'done') entry.done += 1
-        if (record.kind === 'failed') entry.failed += 1
-        if (Number(record.ms)) entry.ms.push(Number(record.ms))
-        if (!entry.slot && record.slot) entry.slot = record.slot
-        byRoute.set(key, entry)
-      }
-
-      const rows = [...byRoute.values()].sort((left, right) => right.started - left.started)
-      const lines = rows.map((entry) => {
-        const avg = entry.ms.length
-          ? Math.round(entry.ms.reduce((sum, value) => sum + value, 0) / entry.ms.length)
-          : 0
-        const tasks = entry.tasks.slice(-3).map((task) => task.slice(0, 24)).join(' | ')
-        return `T${entry.slot ?? '?'} ${entry.route}: started ${entry.started}, done ${entry.done}, failed ${entry.failed}, avg ${avg}ms${tasks ? ` · ${tasks}` : ''}`
+      const lines = summary.map((entry) => {
+        const tasks = entry.tasks.map((task) => task.slice(0, 24)).join(' | ')
+        return `T${entry.slot ?? '?'} ${entry.route}: started ${entry.started}, done ${entry.done}, failed ${entry.failed}, avg ${entry.avgMs}ms${tasks ? ` · ${tasks}` : ''}`
       })
       return [`usage records: ${records.length} (${usageFileOf()})`, ...lines].join('\n')
     },
@@ -2213,6 +2225,11 @@ export function apply(ctx, config) {
   if (webServer?.register) {
     ctx.effect(() => {
       const disposers = [
+        webServer.register({
+          kind: 'exact',
+          path: '/supa/stats',
+          resource: async () => jsonResponse(summarizeUsage(readUsage(5000))),
+        }),
         webServer.register({
           kind: 'exact',
           path: '/supa/state',
