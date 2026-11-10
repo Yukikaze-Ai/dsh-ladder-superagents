@@ -764,7 +764,7 @@ window.__ModuleLoader__.load({
           width: 6,
           height: 6,
           borderRadius: '50%',
-          background: enabled ? 'var(--dsw-alias-brand-primary, #4f46e5)' : 'var(--dsw-alias-state-idle-primary, #9aa0aa)',
+          background: enabled ? 'var(--dsw-alias-state-success-primary, #2f855a)' : 'var(--dsw-alias-state-idle-primary, #9aa0aa)',
         },
       }),
       'SupA')
