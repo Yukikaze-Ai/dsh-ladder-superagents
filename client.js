@@ -827,17 +827,16 @@ window.__ModuleLoader__.load({
 
     const ZH = {
       'Model ladder': '模型阶梯',
-      'Model usage': t('Model usage'),
-      'Per tier': t('Per tier'),
-      'Completion': t('Completion'),
-      'Call timeline': t('Call timeline'),
-      'Recent calls': t('Recent calls'),
+      'Model usage': '模型使用统计',
+      'Per tier': '每个档位',
+      'Completion': '完成比例',
+      'Call timeline': '调用时间线',
+      'Recent calls': '最近调用',
       '1 hour': '1 小时',
       '1 day': '1 天',
       '7 days': '7 天',
       'All': '全部',
       'all time': '全部时间',
-      'last 1 hour': '最近 1 小时',
       'last 1 day': '最近 1 天',
       'last 7 days': '最近 7 天',
       'last 30 days': '最近 30 天',
@@ -847,10 +846,10 @@ window.__ModuleLoader__.load({
       'done': '完成',
       'failed': '失败',
       'loading usage…': '正在加载用量…',
-      'per tier hint': t('per tier hint'),
-      'timeline hint': t('timeline hint'),
-      'T1 is empty': t('T1 is empty'),
-      'T1 is empty hint': t('T1 is empty hint'),
+      'per tier hint': '还没有调用记录。派一次任务之后这里就会有。',
+      'timeline hint': '还没有已完成的调用。',
+      'T1 is empty': 'T1 是空的',
+      'T1 is empty hint': '没有 T1 就没有能接住最难任务的档位。此刻 SupA 无法启用，派活也会被拒绝；先在槽位 1 放一个模型。',
       'empty slot — drag a tier here': '空槽位 — 把模型拖到这里',
       'Reset': '重置',
       'Sure?': '确定？',
@@ -874,11 +873,9 @@ window.__ModuleLoader__.load({
       'Off': '禁用',
       'Remove': '移除',
       'Apply': '应用',
-      'Scan': '扫描',
       'Pin tiers': '验证档位',
       'Loading dsh-ladder-superagents…': '正在加载 dsh-ladder-superagents…',
     }
-
     const t = (english) => (LOCALE === 'zh' ? (ZH[english] ?? english) : english)
 
     const SEGMENTS = [
@@ -1112,6 +1109,7 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
 
 
