@@ -1238,7 +1238,10 @@ export function apply(ctx, config) {
   if (cfg.mode === 'session') {
     ctx.effect(() => ctx.tools.guard((execution) => {
       const name = typeof execution?.name === 'string' ? execution.name : ''
-      if (!name.startsWith('supa_') || name === 'supa_session') return undefined
+      // `supa_session` is the way back in. `supa_report` stays allowed so a
+      // child that was started before the switch-off can still deliver its
+      // result into the queue instead of losing the work.
+      if (!name.startsWith('supa_') || name === 'supa_session' || name === 'supa_report') return undefined
       if (isSupa(execution.agent)) return undefined
       return 'SupA is not enabled in this session (mode "session"). Ask the user whether to enable it, then call `supa_session` with action "enable".'
     }))
@@ -1263,6 +1266,8 @@ export function apply(ctx, config) {
           session: { type: 'string' },
           mode: { type: 'string' },
           supa: { type: 'boolean' },
+          stillRunning: { type: 'number' },
+          note: { type: 'string' },
         },
       },
       render: (_args, value) => textBlocks(JSON.stringify(value, null, 2)),
@@ -1277,7 +1282,29 @@ export function apply(ctx, config) {
       if (args.action === 'enable' && !enabled.includes(id)) enabled = [...enabled, id]
       if (args.action === 'disable') enabled = enabled.filter((entry) => entry !== id)
       if (args.action !== 'status') await writeEnabledSessions(enabled)
-      return { session: id, mode: cfg.mode, supa: isSupa(agent) }
+
+      const value = { session: id, mode: cfg.mode, supa: isSupa(agent) }
+      if (args.action === 'disable') {
+        // Switching off stops new delegation; it does not kill work in flight
+        // and it does not throw results away.
+        const running = (() => {
+          try {
+            const agents = ctx.get?.('agents')
+            return (agents?.list?.() ?? []).filter((entry) => String(entry.session?.header?.parentSession ?? '') === id
+              && entry.status === 'running').length
+          } catch {
+            return 0
+          }
+        })()
+        const queued = pendingReportsOf(inboxFileFor(agent.session)).length
+        value.stillRunning = running
+        value.note = [
+          running > 0 ? `${running} child session(s) keep running; their results stay queued` : 'no child is running',
+          queued > 0 ? `${queued} report(s) already queued and kept` : 'the queue is empty',
+          'new spawns are refused until this session is enabled again',
+        ].join('; ')
+      }
+      return value
     },
   })
 
@@ -2207,7 +2234,7 @@ export function apply(ctx, config) {
       await mkdir(join(file, '..'), { recursive: true })
       await appendFile(file, `${JSON.stringify(record)}\n`, 'utf8')
 
-      if (parent) {
+      if (parent && isSupa(parent)) {
         const line = `[lane ${record.lane}] ${record.kind}: ${record.text}`
         if (!safeInject(parent, line)) {
           try {
@@ -2219,9 +2246,11 @@ export function apply(ctx, config) {
         const pending = pendingReportsOf(file)
         scheduleInboxWake(parent, pending.length, lanesOf(pending).length)
       }
+      // A parent that switched SupA off keeps the queue, but is not woken: the
+      // result waits there until the session is enabled again.
 
       const depth = pendingReportsOf(file).length
-      return `queued ${record.id} on lane ${record.lane} (parent queue depth ${depth})`
+      return `queued ${record.id} on lane ${record.lane} (parent queue depth ${depth}${parent && !isSupa(parent) ? ', parent is not a SupA right now so it stays queued' : ''})`
     },
   }
 
