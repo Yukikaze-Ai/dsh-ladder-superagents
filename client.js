@@ -63,10 +63,30 @@ window.__ModuleLoader__.load({
       return h('td', { style: styles.td }, props.children)
     }
 
-    function TierRow({ tier, index, count, onAction }) {
+    function TierRow({ tier, index, count, onAction, onReorder, dragIndex, setDragIndex }) {
       const toggle = () => onAction({ action: 'enable', id: tier.id, enabled: !tier.enabled })
       const move = (to) => onAction({ action: 'move', id: tier.id, to })
-      return h('tr', null,
+      return h('tr', {
+        draggable: true,
+        onDragStart: (event) => {
+          event.dataTransfer.setData('text/plain', String(index))
+          event.dataTransfer.effectAllowed = 'move'
+          setDragIndex(index)
+        },
+        onDragEnd: () => setDragIndex(null),
+        onDragOver: (event) => {
+          event.preventDefault()
+          event.dataTransfer.dropEffect = 'move'
+        },
+        onDrop: (event) => {
+          event.preventDefault()
+          const from = Number(event.dataTransfer.getData('text/plain'))
+          setDragIndex(null)
+          if (Number.isInteger(from) && from !== index) onReorder(from, index)
+        },
+        style: dragIndex === index ? { opacity: 0.4 } : undefined,
+      },
+        h(Cell, null, h('span', { style: { cursor: 'grab', color: muted }, title: 'Drag to reorder' }, '⠿')),
         h(Cell, null, h('span', { style: { color: muted } }, String(index + 1))),
         h(Cell, null,
           h('div', { style: { fontWeight: 500 } }, tier.label),
@@ -189,6 +209,7 @@ window.__ModuleLoader__.load({
       const [cwd, setCwd] = useState('')
       const [error, setError] = useState('')
       const [busy, setBusy] = useState(false)
+      const [dragIndex, setDragIndex] = useState(null)
 
       const load = useCallback(async (targetCwd) => {
         try {
@@ -224,6 +245,10 @@ window.__ModuleLoader__.load({
       }, [cwd])
 
       const tiers = state?.tiers ?? []
+      const reorder = useCallback((from, to) => {
+        const tier = (state?.tiers ?? [])[from]
+        if (tier) act({ action: 'move', id: tier.id, to })
+      }, [state, act])
       const summary = useMemo(() => {
         if (!state) return ''
         const usable = tiers.filter((tier) => tier.available && tier.enabled && !tier.failure).length
@@ -248,6 +273,7 @@ window.__ModuleLoader__.load({
           : h('table', { style: styles.table },
             h('thead', null,
               h('tr', null,
+                h('th', { style: styles.th }, ''),
                 h('th', { style: styles.th }, '#'),
                 h('th', { style: styles.th }, 'Tier'),
                 h('th', { style: styles.th }, 'State'),
@@ -259,12 +285,15 @@ window.__ModuleLoader__.load({
                 index,
                 count: tiers.length,
                 onAction: act,
+                onReorder: reorder,
+                dragIndex,
+                setDragIndex,
               })))),
         h(Catalog, { catalog: state.catalog, llm: state.llm, busy, onScan: act, onPin: act }),
         h(AddForm, { drivers: state.drivers, onAdd: act }),
         error ? h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-state-error, #c04040)' } }, error) : null,
         h('div', { style: styles.hint },
-          'Order is capability: position 1 is the strongest. A task scored 1–10 takes the weakest tier whose ceiling still covers it.'),
+          'Row 1 is the strongest and higher numbers are weaker — drag a row by its handle to reorder. Difficulty is the other axis: a task scored 1–10 takes the weakest tier whose ceiling still covers it.'),
       )
     }
 
