@@ -422,8 +422,8 @@ window.__ModuleLoader__.load({
       return h('div', { style: s.card },
         h('div', { style: s.sectionTitle }, t('Add a tier')),
         h('div', { style: s.hint }, disabled
-          ? 'All ten slots are taken — remove one to add another.'
-          : 'Added to the first free slot; drag it into place afterwards.'),
+          ? t('all slots taken')
+          : t('added to free slot')),
         h('div', { style: s.row },
           h('select', { style: s.input, value: kind, onChange: (event) => setKind(event.target.value) },
             h('option', { value: 'llm' }, 'llm'),
@@ -738,8 +738,7 @@ window.__ModuleLoader__.load({
           }, t('Add a model manually')),
 
         error ? h('div', { style: s.error }, error) : null,
-        h('div', { style: s.hint },
-          'The ladder is ten slots: T1 is the strongest and covers a 10-point task, T10 the weakest and covers a 1-point task. Drag a tier by its handle to change its slot; the slot is its tier.'),
+        h('div', { style: s.hint }, t('ladder explain')),
       )
     }
 
@@ -930,6 +929,9 @@ window.__ModuleLoader__.load({
       'by preset': '按预设',
       'minutes': '分钟',
       'auto approve hint': '请求当场批准，并记入账本',
+      'all slots taken': '十个槽位都占了——先移除一个再加。',
+      'added to free slot': '已放入第一个空槽位，之后可以拖动调整位置。',
+      'ladder explain': '阶梯共十个槽位：T1 最强，负责 10 分难度的任务；T10 最弱，负责 1 分难度。拖动左侧手柄可以改变槽位——槽位就是它的档位。',
     }
     const t = (english) => (LOCALE === 'zh' ? (ZH[english] ?? english) : english)
 
