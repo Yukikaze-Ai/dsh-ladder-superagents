@@ -1,0 +1,9 @@
+- insert:
+    - id: supa
+      name: '@local/dsh-supa'
+      config:
+        enabled: true
+        autoApprove: true
+        denyBlockingQuestions: true
+        continueWhenBlocked: true
+        continueOnOpenTodos: false

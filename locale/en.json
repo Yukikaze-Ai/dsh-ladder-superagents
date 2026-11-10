@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "dsh-supa",
+    "description": "Turns every session into a never-blocking super agent: decided approvals, a shared context ledger, a per-child inbound queue, delegated authority, and difficulty routing across a model ladder that includes external CLIs."
+  }
+}
