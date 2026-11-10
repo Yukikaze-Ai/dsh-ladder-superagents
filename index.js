@@ -1179,7 +1179,7 @@ export function apply(ctx, config) {
       delivery: 'parent',
     }).catch(() => {})
     try {
-      const summary = command.split('\n')[0].trim().slice(0, 120)
+      const summary = command.replace(/\s+/g, ' ').trim().slice(0, 160)
       safeInject(agent, `起了一个子代理去跑（${what}）：\`${summary}\`。它跑完会把结果放进队列，到时候我再通知你。`)
     } catch {
       // the notification is best effort; the command still runs
@@ -1189,11 +1189,16 @@ export function apply(ctx, config) {
 
   const SLEEP_PATTERN = /\b(?:sleep\s+(\d+(?:\.\d+)?)|Start-Sleep\s+(?:-Seconds\s+)?(\d+(?:\.\d+)?)|timeout\s+\/t\s+(\d+))\b/gi
   const POLL_LOOP = /\b(?:while|until|for)\b[\s\S]{0,200}?\b(?:sleep|Start-Sleep)\b/i
-  // Commands that almost never finish inside a turn.
-  const LONG_COMMAND = /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:install|i|add|run|test|build|publish)|(?:pip|uv|poetry)\s+(?:install|add|sync)|(?:cargo|go|dotnet|msbuild|gradle|mvn|make|cmake)\b|pytest|tox|jest|vitest|playwright|cypress|docker|git\s+(?:clone|fetch|pull|push)|curl|wget)\b/i
+  // Commands that almost never finish inside a turn. Kept narrow on purpose:
+  // `git push` or `curl` finish in a second, and handing those off only adds a
+  // child turn to every commit.
+  const LONG_COMMAND = /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:install|i|add|run|test|build|publish)|(?:pip|uv|poetry)\s+(?:install|add|sync)|(?:cargo|dotnet|msbuild|gradle|mvn)\s+(?:build|test|run|publish|restore)|(?:go|make|cmake)\s+(?:build|test|install|all)|pytest|tox|jest|vitest|playwright|cypress|docker\s|git\s+clone)\b/i
   ctx.effect(() => ctx.tools.guard((execution) => {
     if (!execution || !isSupa(execution.agent)) return undefined
     if (execution.name !== 'pwsh' && execution.name !== 'bash') return undefined
+    // A child exists to run the command. Handing off from a child would spawn a
+    // child of a child forever, and nobody would ever execute anything.
+    if (execution.agent?.session?.header?.parentSession) return undefined
     const args = execution.arguments
     if (!args || typeof args !== 'object') return undefined
     if (args.run_in_background === true) return undefined
