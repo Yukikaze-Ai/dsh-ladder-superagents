@@ -160,11 +160,13 @@ The SupA scores a task 1-10; `supa_spawn` with `difficulty: 7` picks the tier.
   "degrade one step at a time" rule.
 - A failed attempt retries the **same tier** once (`tierAttempts`) before it is
   treated as a model problem: then the route is marked in
-  `.dsh-supa/failures.json`, the tier leaves the ladder, and the next attempt
-  walks down to the next tier. The mark shows as `COOLING DOWN` /
-  `Failed routes` and in the catalog row, where **Clear** removes it. If every
-  tier is cooling, the strongest enabled tier is used rather than silently
-  falling back to the parent route.
+  `.dsh-supa/failures.json` and the tier stays in the ladder **disabled and
+  red**. It is the user who deletes it, and **Retry** on that row probes it
+  once: green re-enables it, red keeps it out. When every route in the ladder
+  is marked, the weakest slot is replaced by the built-in
+  `deepseek-official/deepseek-flash@high` so the pool can still route. If a
+  user switched tiers off by hand instead, nothing is replaced — that is a
+  deliberate choice, not a broken route.
 - An empty ladder means children inherit the parent route, unchanged.
 - A tier may be an external CLI instead of a Harness route: `kind: "codex"`
   runs `codex exec` as a child process, feeds the same context pack on stdin,

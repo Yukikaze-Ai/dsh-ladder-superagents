@@ -159,12 +159,19 @@ window.__ModuleLoader__.load({
         h('div', { style: s.tierTitle }, tier.label),
         h('div', { style: s.meta }, tier.route)),
       h('div', { style: s.state },
-        h('span', { style: s.dot(tier.available && tier.enabled) }),
-        h('span', null, tier.enabled ? (tier.available ? 'usable' : 'missing') : 'disabled')),
+        h('span', { style: s.dot(tier.available && tier.enabled && !tier.failure) }),
+        h('span', null, tier.failure ? 'failed' : tier.enabled ? (tier.available ? 'usable' : 'missing') : 'disabled')),
       h('div', { style: s.actions },
         h('button', { style: s.btnIcon, onClick: () => move(tier.slot - 1), disabled: tier.slot <= 1, title: 'Move up a tier' }, '↑'),
         h('button', { style: s.btnIcon, onClick: () => move(tier.slot + 1), disabled: tier.slot >= 10, title: 'Move down a tier' }, '↓'),
         h('button', { style: s.btn, onClick: toggle, title: tier.enabled ? 'Disable this tier' : 'Enable this tier' }, tier.enabled ? 'Off' : 'On'),
+        tier.failure
+          ? h('button', {
+            style: { ...s.btn, color: color.bad },
+            onClick: () => onAction({ action: 'retry', id: tier.id }),
+            title: 'Probe this configuration once; it is enabled again only if it answers',
+          }, 'Retry')
+          : null,
         h('button', {
           style: confirming ? { ...s.btn, color: color.bad } : s.btnIcon,
           onClick: () => {
@@ -610,11 +617,6 @@ window.__ModuleLoader__.load({
             h('span', { style: { color: color.bad, fontSize: 12 } }, '✕'),
             h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, failure.label ?? failure.route),
             h('span', { style: { ...s.meta, flex: 1 } }, `${failure.route} · ${String(failure.error).slice(0, 120)}`),
-            h('button', {
-              style: { ...s.btn, color: color.bad },
-              onClick: () => act({ action: 'retry', key: failure.key }),
-              title: 'Probe this configuration once; it returns to the ladder only if it answers',
-            }, 'Retry'),
             h('button', { style: s.btn, onClick: () => act({ action: 'clear', key: failure.key }) }, 'Clear'))))
           : null,
 

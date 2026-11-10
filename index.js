@@ -278,15 +278,49 @@ async function recordFailure(cwd, cfg, keys, error, tier = null) {
 }
 
 /**
- * A failed tier leaves the ladder. Its configuration is kept in the failure
- * record so a later Retry can put it back once it answers.
+ * A failed tier stays in the ladder, red and disabled, and the user deletes it
+ * if they want to. The one exception is a ladder where nothing is usable any
+ * more: then the weakest slot is swapped for the built-in fallback, so the pool
+ * can still route.
  */
 async function dropTier(cwd, cfg, tierId) {
   if (!tierId) return
   const ladder = await readLadder(modelsFileOf())
-  const next = ladder.tiers.filter((tier) => tier.id !== tierId)
-  if (next.length === ladder.tiers.length) return
-  await writeLadder(modelsFileOf(), { version: 1, tiers: next })
+  const tier = ladder.tiers.find((entry) => entry.id === tierId)
+  if (!tier || tier.enabled === false) return
+  tier.enabled = false
+  await writeLadder(modelsFileOf(), ladder)
+}
+
+const FALLBACK_TIER = {
+  label: 'DeepSeek Flash (high)',
+  kind: 'llm',
+  provider: 'deepseek-official',
+  model: 'deepseek-flash',
+  reasoningEffort: 'high',
+}
+
+async function ensureUsableRoute(cwd, cfg) {
+  const ladder = await readLadder(modelsFileOf())
+  if (ladder.tiers.length === 0) return null
+  const failures = readFailures(cwd, cfg)
+  // Only failed tiers trigger the fallback. A tier the user switched off by
+  // hand is their decision, not a broken route.
+  const allFailed = ladder.tiers.every((tier) => failureActive(failures[`route:${tierRoute(tier)}`], cfg))
+  if (!allFailed) return null
+
+  const bottom = ladder.tiers.reduce((weak, tier) => (tier.slot > weak.slot ? tier : weak), ladder.tiers[0])
+  const tiers = ladder.tiers.filter((tier) => tier.id !== bottom.id)
+  const ids = new Set(tiers.map((tier) => tier.id))
+  let id = 'fallback'
+  let suffix = 1
+  while (ids.has(id)) id = `fallback-${suffix++}`
+  const fresh = normalizeTier({ ...FALLBACK_TIER, slot: bottom.slot, enabled: true }, 0)
+  fresh.id = id
+  tiers.push(fresh)
+  tiers.sort((a, b) => a.slot - b.slot)
+  await writeLadder(modelsFileOf(), { version: 1, tiers })
+  return `every tier was down: T${bottom.slot} ${bottom.label} was replaced by the built-in ${FALLBACK_TIER.label}`
 }
 
 /** Probe one CLI tier with a single real call, reusing its driver. */
@@ -1562,10 +1596,12 @@ export function apply(ctx, config) {
         ...tier,
         route: tierRoute(tier),
         available: Boolean(availability[index]),
-        failure: failureActive(failures[tier.id], cfg) ? failures[tier.id] : null,
+        failure: failureActive(failures[`route:${tierRoute(tier)}`] ?? failures[tier.id], cfg)
+          ? (failures[`route:${tierRoute(tier)}`] ?? failures[tier.id])
+          : null,
       })),
-      // Failures are keyed by route, not by slot: a failed tier is removed
-      // from the ladder, and the route stays marked until it is cleared.
+      // Every failed route keeps its mark until it is cleared or a retry
+      // succeeds; a failed tier stays in the ladder, disabled.
       failures: Object.entries(failures)
         .filter(([key, entry]) => key.startsWith('route:') && failureActive(entry, cfg))
         .map(([key, entry]) => ({
@@ -1623,41 +1659,27 @@ export function apply(ctx, config) {
     }
 
     if (body?.action === 'retry') {
-      const key = String(body.key ?? '')
-      const all = readFailures(cwd, cfg)
-      const entry = all[key]
-      if (!entry) throw new Error(`no failure record for ${key || '(empty key)'}`)
-      if (!entry.tier) throw new Error('this failure has no saved configuration; add the model again')
-      const pending = normalizeTier(entry.tier, 0)
-      const verdict = isCliTier(pending)
-        ? await probeCliTier(cfg, pending)
-        : (await tierAvailable(pending))
+      const tier = ladder.tiers.find((entry) => entry.id === String(body.id))
+      if (!tier) throw new Error(`no tier ${body.id}`)
+      const verdict = isCliTier(tier)
+        ? await probeCliTier(cfg, tier)
+        : (await tierAvailable(tier))
           ? { ok: true }
           : { ok: false, error: 'the llm service does not resolve this route' }
 
-      if (!verdict.ok) {
-        entry.at = Date.now()
-        entry.error = String(verdict.error ?? '').slice(0, 300)
-        await mkdir(stateDirOf(), { recursive: true })
-        await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(all, null, 2)}\n`, 'utf8')
-        return { ...(await settingsState(cwd)), retry: { ok: false, error: entry.error } }
+      const all = readFailures(cwd, cfg)
+      const key = `route:${tierRoute(tier)}`
+      if (verdict.ok) {
+        delete all[key]
+        tier.enabled = true
+      } else {
+        all[key] = { at: Date.now(), error: String(verdict.error ?? '').slice(0, 300), tier }
+        tier.enabled = false
       }
-
-      delete all[key]
       await mkdir(stateDirOf(), { recursive: true })
       await writeFile(failuresFileOf(cwd, cfg), `${JSON.stringify(all, null, 2)}\n`, 'utf8')
-
-      const used = new Set(ladder.tiers.map((item) => item.slot))
-      if (used.size >= 10) throw new Error('all ten slots are taken; remove one before retrying this back in')
-      let free = 1
-      while (used.has(free)) free += 1
-      const ids = new Set(ladder.tiers.map((item) => item.id))
-      let id = pending.id
-      while (ids.has(id)) id = `${pending.id}-${free}`
-      ladder.tiers.push(normalizeTier({ ...entry.tier, id, slot: free, enabled: true }, free - 1))
-      ladder.tiers.sort((a, b) => a.slot - b.slot)
       await writeLadder(modelsFileOf(), ladder)
-      return { ...(await settingsState(cwd)), retry: { ok: true, slot: free } }
+      return { ...(await settingsState(cwd)), retry: { ok: Boolean(verdict.ok), error: verdict.error ?? '' } }
     }
 
     if (body?.action === 'clear') {
@@ -2231,7 +2253,12 @@ export function apply(ctx, config) {
         // mark it and free the slot.
         if (tier?.id) {
           recordFailure(cwd, cfg, [`route:${tierRoute(tier)}`], stop, tier).catch(() => {})
-          dropTier(cwd, cfg, tier.id).catch(() => {})
+          dropTier(cwd, cfg, tier.id)
+            .then(() => ensureUsableRoute(cwd, cfg))
+            .then((note) => {
+              if (note) enqueueParentNote(note, 'retry')
+            })
+            .catch(() => {})
         }
         if (!cfg.retryOnFailure) return
         const index = tier ? routeChain.findIndex((entry) => entry.id === tier.id) : -1
