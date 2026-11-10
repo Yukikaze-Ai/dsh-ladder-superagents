@@ -30,6 +30,11 @@ chosen tier and chain) into a function, then one Node test file using
 
 ## 3. Verify or label the nine unverified CLI drivers — see [docs/CLI-DRIVERS.md](docs/CLI-DRIVERS.md)
 
+One issue per driver is open on the tracker (`Verify the <name> CLI driver`,
+labelled `driver` / `needs-account` / `good first issue`), so a contributor can
+claim a single CLI without reading the whole plugin. The checklist is the same
+for all nine and lives in `docs/CLI-DRIVERS.md`.
+
 Only `codex` has been run against a working install. kimi, claude, gemini, qwen,
 cursor, opencode, aider, copilot and goose are implemented from each CLI's
 documented invocation.
