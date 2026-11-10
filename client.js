@@ -216,7 +216,7 @@ window.__ModuleLoader__.load({
       const tiers = state?.tiers ?? []
       const summary = useMemo(() => {
         if (!state) return ''
-        const usable = tiers.filter((tier) => tier.available && tier.enabled).length
+        const usable = tiers.filter((tier) => tier.available && tier.enabled && !tier.failure).length
         return `${usable}/${tiers.length} usable · autoApprove ${String(state.config.autoApprove)} · authority ${state.config.authority}`
       }, [state, tiers])
 
