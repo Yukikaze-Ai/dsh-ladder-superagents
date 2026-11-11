@@ -2719,7 +2719,7 @@ export function apply(ctx, config) {
       'You pass a brief plus an explicit context selection: ledger notes by id or tag, files, and optionally the last N messages of this conversation.',
       'The child sees nothing else of this conversation. It can pull more with `supa_context_request`, and you answer with `supa_context_supply`.',
       'Choose the smallest context that makes the child succeed; do not dump the whole conversation.',
-      'Returns the child session id immediately; its completion wakes this session. Pass continue with an existing worker id to send it a follow-up instead of paying for a new session.',
+      'Returns the child session id immediately; its completion wakes this session. Pass `continue` with an existing worker id to send it a follow-up instead of paying for a new session.',
     ].join(' '),
     parameters: {
       type: 'object',
