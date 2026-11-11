@@ -1,5 +1,7 @@
 # dsh-ladder-superagents
 
+<img src="icon.png" width="72" alt="SupA" align="right" />
+
 [English](README.md) · **中文**
 
 > **0.1 仅支持 Windows。** CLI 发现、`.cmd` 启动和路径处理都是按 Windows
@@ -296,5 +298,6 @@ Bug 和复现是最有用的贡献。阅读
 路由测试都标记为 `good first issue`。
 
 发布说明位于 [CHANGELOG.md](CHANGELOG.md)。
+
 
 

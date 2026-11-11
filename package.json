@@ -23,7 +23,8 @@
     "docs/*.md",
     "LICENSE",
     "docs/img/*.png",
-    "README.zh-CN.md"
+    "README.zh-CN.md",
+    "icon.png"
   ],
   "os": [
     "win32"

@@ -1,5 +1,7 @@
 # dsh-ladder-superagents
 
+<img src="icon.png" width="72" alt="SupA" align="right" />
+
 **English** · [中文](README.zh-CN.md)
 
 > **0.1 is Windows-only.** CLI discovery, `.cmd` launching and path handling are
@@ -314,6 +316,7 @@ codebase learned the hard way, then pick something from
 marked `good first issue`.
 
 Release notes live in [CHANGELOG.md](CHANGELOG.md).
+
 
 
 
