@@ -114,6 +114,7 @@ const CHARTER = [
   'Route work by difficulty. Rate a task 1-10 (1 = a 4B model can do it, 10 = contradictory or missing information needing judgment) and pass `difficulty` to `supa_spawn`: the ladder picks the weakest tier that still covers the score, and degrades to the strongest available tier when nothing covers it. `supa_models list` shows the ladder and the routes the runtime actually advertises.',
   'Delegate in chunks, not in atoms. A chunk is worth a worker when it has two or more steps, needs a decision, or runs something (a build, a test, a search across files): spawn it, keep working, then drain `supa_inbox` and pick what matters. A single read, a single edit, a commit, or a question to the user stays in your hands — a worker turn costs more than those.',
   'Start independent chunks together. When two pieces of work do not depend on each other, spawn both in the same turn instead of waiting for the first; the ladder runs them in parallel and both results land in `supa_inbox`.',
+  'Reuse a worker you already started when the follow-up is related: `supa_spawn` with `continue: <childId>` sends it a message and keeps its context, while a new spawn pays for the system prompt and the whole context pack again.',
   'Show your work while it runs. Before a run of more than a couple of tool calls, state in one line what you are about to do and why — the user is watching a spinner, not your progress, and silence reads as "gone". Report the outcome as soon as you have it.',
   'Foreground first: the user may type again at any moment, and their message must never sit behind your turn. Keep each turn short and end it with a status instead of holding it open for a child or a long command; anything slow belongs to a child that reports into `supa_inbox`. When a new user message arrives while a child is running, answer the user first and pick the child up afterwards.',
   'Work style: act, do not ask. Never wait inside a turn: a command that sleeps, polls, or builds for more than a few seconds belongs in the background (`run_in_background`) or in a child; come back for its result instead of sitting on it. Check a thing once — a registry, a build, a deployment — and if it has not changed, end the turn and say when to look again; never poll in a loop while the user waits. If a tool fails, change approach rather than waiting. End a turn only when the work is done, when you are waiting on a child that will wake you, or when the remaining choice is irreversible.',
@@ -2718,12 +2719,16 @@ export function apply(ctx, config) {
       'You pass a brief plus an explicit context selection: ledger notes by id or tag, files, and optionally the last N messages of this conversation.',
       'The child sees nothing else of this conversation. It can pull more with `supa_context_request`, and you answer with `supa_context_supply`.',
       'Choose the smallest context that makes the child succeed; do not dump the whole conversation.',
-      'Returns the child session id immediately; its completion wakes this session.',
+      'Returns the child session id immediately; its completion wakes this session. Pass continue with an existing worker id to send it a follow-up instead of paying for a new session.',
     ].join(' '),
     parameters: {
       type: 'object',
       properties: {
         brief: { type: 'string', description: 'The complete task for the child. It cannot see this conversation.' },
+        continue: {
+          type: 'string',
+          description: 'Reuse an existing worker: its child session id. The brief goes to that worker as a follow-up, so its system prompt and context are not paid for again.',
+        },
         label: { type: 'string', description: 'A short display label (3-5 words).' },
         acceptance: { type: 'string', description: 'What counts as done, and what to report back.' },
         notes: {
@@ -2791,6 +2796,30 @@ export function apply(ctx, config) {
       const session = agent.session
       const cwd = sessionCwd(ctx, session)
       const file = ledgerFileOf(cwd, cfg)
+
+      // Reuse: send the brief to a worker that already exists. It keeps its
+      // system prompt and context, so a follow-up costs one message instead of
+      // a whole new session.
+      if (typeof args.continue === 'string' && args.continue.trim()) {
+        const childId = args.continue.trim()
+        const child = ctx.get?.('agents')?.get?.(childId)
+        if (!child) throw new Error(`no worker with id ${childId}`)
+        if (String(child.session?.header?.parentSession ?? '') !== String(session.id)) {
+          throw new Error(`agent ${childId} is not one of this session's workers`)
+        }
+        const text = `Follow-up task from your SupA:\n\n${String(args.brief)}`
+        const messageId = await subagents.sendMessage(agent, childId, textBlocks(text), { signal: exec.signal })
+        recordUsage({
+          kind: 'start',
+          session: String(session.id),
+          reused: childId,
+          task: String(args.label ?? 'follow-up'),
+          tier: '',
+          slot: null,
+          route: 'reused',
+        })
+        return `continued worker ${shortId(childId)} (message ${String(messageId).slice(0, 8)}) — it keeps its context, so nothing was re-sent. Its report lands in \`supa_inbox\`.`
+      }
 
       // A flat fan-out is bounded by width, not depth.
       const running = runningChildrenOf(session.id)
@@ -3366,6 +3395,7 @@ export function apply(ctx, config) {
 
   log(`active (mode=${cfg.mode}, ledger=${cfg.ledgerDir}, autoApprove=${cfg.autoApprove})`)
 }
+
 
 
 
