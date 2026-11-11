@@ -539,6 +539,26 @@ function readUsage(limit = 2000) {
 }
 
 /**
+ * Attribute a reuse record to the tier its worker was started with. A reuse
+ * carries only the child id, so without this every follow-up would pile up in a
+ * single "reused" row instead of showing which model did the work.
+ */
+export function attributeReuse(records) {
+  const origin = new Map()
+  for (const record of records) {
+    if (record?.child && record.route && record.route !== 'reused') {
+      origin.set(String(record.child), { route: record.route, slot: record.slot ?? null })
+    }
+  }
+  return records.map((record) => {
+    if (record?.route !== 'reused' || !record.reused) return record
+    const source = origin.get(String(record.reused))
+    if (!source) return record
+    return { ...record, route: source.route, slot: source.slot, reusedOf: String(record.reused) }
+  })
+}
+
+/**
  * Keep only the records one session produced. An empty id means every session,
  * which is also what history recorded before sessions were written down.
  */
@@ -590,6 +610,7 @@ export function summarizeUsage(records) {
       entry.started += 1
       if (record.task) entry.tasks.push(String(record.task))
     }
+    if (record.reusedOf) entry.reused = (entry.reused ?? 0) + 1
     if (record.kind === 'done') entry.done += 1
     if (record.kind === 'failed') entry.failed += 1
     if (Number(record.ms)) entry.ms.push(Number(record.ms))
@@ -607,6 +628,7 @@ export function summarizeUsage(records) {
       done: entry.done,
       failed: entry.failed,
       avgMs: entry.ms.length ? Math.round(entry.ms.reduce((sum, value) => sum + value, 0) / entry.ms.length) : 0,
+      reused: entry.reused ?? 0,
       inputTokens: entry.inputTokens ?? 0,
       outputTokens: entry.outputTokens ?? 0,
       tasks: entry.tasks.slice(-3),
@@ -1583,7 +1605,7 @@ export function apply(ctx, config) {
     },
     isConcurrencySafe: () => true,
     async execute(args, exec) {
-      const inWindow = withinHours(readUsage(5000), Number(args.hours) || 0)
+      const inWindow = withinHours(attributeReuse(readUsage(5000)), Number(args.hours) || 0)
       // Default to this session: the file is shared by the whole profile.
       const sessionId = args.scope === 'all' ? '' : String(exec?.agent?.session?.id ?? '')
       const records = withinSession(inWindow, sessionId)
@@ -1607,10 +1629,11 @@ export function apply(ctx, config) {
 
       const lines = summary.map((entry) => {
         const tasks = entry.tasks.map((task) => task.slice(0, 24)).join(' | ')
+        const reuses = entry.reused ? `, ${entry.reused} reused` : ''
         const tokens = entry.inputTokens || entry.outputTokens
           ? `, tokens ${entry.inputTokens} in / ${entry.outputTokens} out`
           : ''
-        return `T${entry.slot ?? '?'} ${entry.route}: started ${entry.started}, done ${entry.done}, failed ${entry.failed}, avg ${entry.avgMs}ms${tokens}${tasks ? ` · ${tasks}` : ''}`
+        return `T${entry.slot ?? '?'} ${entry.route}: started ${entry.started}, done ${entry.done}, failed ${entry.failed}, avg ${entry.avgMs}ms${reuses}${tokens}${tasks ? ` · ${tasks}` : ''}`
       })
       return [`usage records: ${records.length} (${usageFileOf()})`, ...lines].join('\n')
     },
@@ -2369,7 +2392,7 @@ export function apply(ctx, config) {
             const params = new URL(request.url).searchParams
             const hours = Number(params.get('hours'))
             const session = String(params.get('session') ?? '')
-            return jsonResponse(summarizeUsage(withinSession(withinHours(readUsage(5000), hours), session)))
+            return jsonResponse(summarizeUsage(withinSession(withinHours(attributeReuse(readUsage(5000)), hours), session)))
           },
         }),
         webServer.register({
@@ -3402,6 +3425,8 @@ export function apply(ctx, config) {
 
   log(`active (mode=${cfg.mode}, ledger=${cfg.ledgerDir}, autoApprove=${cfg.autoApprove})`)
 }
+
+
 
 
 
