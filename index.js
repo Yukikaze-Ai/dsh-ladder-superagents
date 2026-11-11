@@ -2778,12 +2778,15 @@ export function apply(ctx, config) {
           packBytes: { type: 'number' },
           sections: { type: 'string' },
           model: { type: 'string' },
+          reused: { type: 'string' },
         },
       },
       render: (_args, value) => textBlocks(
-        `${value?.kind === 'cli' ? `started ${value?.cliId}` : `started SupA child ${value?.subagentId}`}`
-        + ` on ${value?.model ?? 'inherited route'} with a ${value?.packBytes ?? 0}-byte context pack (${value?.sections ?? ''})`
-        + '. Its result arrives in your inbound queue — drain it with `supa_inbox` when you are ready to pick.',
+        value?.reused
+          ? `continued worker ${value.reused} — it keeps its context, so only the message was sent. Its result arrives in your inbound queue; drain it with \`supa_inbox\`.`
+          : `${value?.kind === 'cli' ? `started ${value?.cliId}` : `started SupA child ${value?.subagentId}`}`
+            + ` on ${value?.model ?? 'inherited route'} with a ${value?.packBytes ?? 0}-byte context pack (${value?.sections ?? ''})`
+            + '. Its result arrives in your inbound queue — drain it with `supa_inbox` when you are ready to pick.',
       ),
     },
     isConcurrencySafe: () => true,
@@ -2818,7 +2821,7 @@ export function apply(ctx, config) {
           slot: null,
           route: 'reused',
         })
-        return `continued worker ${shortId(childId)} (message ${String(messageId).slice(0, 8)}) — it keeps its context, so nothing was re-sent. Its report lands in \`supa_inbox\`.`
+        return { kind: 'activation', subagentId: childId, model: 'reused', packBytes: 0, sections: `message ${String(messageId).slice(0, 8)}`, reused: childId }
       }
 
       // A flat fan-out is bounded by width, not depth.
