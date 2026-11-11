@@ -2806,12 +2806,16 @@ export function apply(ctx, config) {
       if (typeof args.continue === 'string' && args.continue.trim()) {
         const childId = args.continue.trim()
         const child = ctx.get?.('agents')?.get?.(childId)
-        if (!child) throw new Error(`no worker with id ${childId}`)
-        if (String(child.session?.header?.parentSession ?? '') !== String(session.id)) {
+        // A finished worker may be gone from the live list but still resumable,
+        // so a missing entry is not proof that the id is wrong.
+        if (child && String(child.session?.header?.parentSession ?? '') !== String(session.id)) {
           throw new Error(`agent ${childId} is not one of this session's workers`)
         }
         const text = `Follow-up task from your SupA:\n\n${String(args.brief)}`
         const messageId = await subagents.sendMessage(agent, childId, textBlocks(text), { signal: exec.signal })
+          .catch((error) => {
+            throw new Error(`could not reach worker ${childId}: ${String(error?.message ?? error)}`)
+          })
         recordUsage({
           kind: 'start',
           session: String(session.id),
