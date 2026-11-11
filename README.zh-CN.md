@@ -285,6 +285,11 @@ MIT —— 见 [LICENSE](LICENSE)。
 - 一个 `codex` 层级是一个普通子进程，不是 Harness 会话：审批系统和权限
   记账都不管辖它。权限上限被映射到 codex 自己的 `-s` 标志上，
   那就是全部的控制手段。
+- **`full` 权限的 CLI 层级会关掉那个 CLI 自己的保护。** `claude` 会加
+  `--dangerously-skip-permissions`，`gemini` 和 `qwen` 会加 `--yolo`，
+  `cursor-agent` 会加 `--force`。这些进程在 Harness 审批系统之外运行，
+  唯一拦得住它们的就是权限上限。除非你确实打算这样，否则让 CLI 层级停在
+  `workspace` 权限。
 - 台账存放在工作区里（`.dsh-supa/`），所以它随仓库一起走。如果你不想让它
   被提交，就把它加进 `.gitignore`。
 - 在 `mode: 'all'` 下 charter 适用于每个会话。请使用 `mode: 'session'`

@@ -302,6 +302,11 @@ MIT — see [LICENSE](LICENSE).
 - A `codex` tier is a plain child process, not a Harness session: neither the
   approval system nor the authority bookkeeping governs it. The authority
   ceiling is mapped onto codex's own `-s` flag, and that is the entire control.
+- **A CLI tier with `full` authority disables that CLI's own guard.** `claude`
+  gets `--dangerously-skip-permissions`, `gemini` and `qwen` get `--yolo`,
+  `cursor-agent` gets `--force`. Those processes run outside the Harness
+  approval system, so the authority ceiling is the only thing stopping them.
+  Leave CLI tiers on `workspace` authority unless you mean it.
 - The ledger lives in the workspace (`.dsh-supa/`) so it travels with the repo.
   Add it to `.gitignore` if you do not want it committed.
 - The charter applies to every session in `mode: 'all'`. Use `mode: 'session'`
