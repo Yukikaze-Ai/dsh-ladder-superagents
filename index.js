@@ -1417,7 +1417,17 @@ export function apply(ctx, config) {
     })
     try {
       const summary = command.replace(/\s+/g, ' ').trim().slice(0, 160)
-      safeInject(agent, `起了一个子代理去跑（${what}）：\`${summary}\`。它跑完会把结果放进队列，到时候我再通知你。`)
+      // A hand-off is a ladder call too: without this the stats of a session that
+    // only ever handed commands off look empty.
+    recordUsage({
+      kind: 'start',
+      session: String(agent.session?.id ?? ''),
+      task: summary.slice(0, 80),
+      tier: '',
+      slot: null,
+      route: 'handoff',
+    })
+    safeInject(agent, `起了一个子代理去跑（${what}）：\`${summary}\`。它跑完会把结果放进队列，到时候我再通知你。`)
     } catch {
       // the notification is best effort; the command still runs
     }
@@ -1483,6 +1493,30 @@ export function apply(ctx, config) {
     }
     return `This command is ${what} in the foreground, which blocks the whole turn. `
       + 'Run it with `run_in_background: true`, or hand it to a child with `supa_spawn`.'
+  }))
+
+  // Children the platform starts with `subagent` never pass through the ladder,
+  // so they are invisible to the stats. Count them instead of pretending the
+  // session did nothing.
+  ctx.effect(() => ctx.tools.guard((execution) => {
+    const name = typeof execution?.name === 'string' ? execution.name : ''
+    if (name !== 'subagent' && name !== 'subagent_fork') return undefined
+    const agent = execution.agent
+    if (!agent || !isSupa(agent)) return undefined
+    try {
+      const args = execution.arguments ?? {}
+      recordUsage({
+        kind: 'start',
+        session: String(agent.session?.id ?? ''),
+        task: String(args.description ?? args.label ?? '').slice(0, 80),
+        tier: '',
+        slot: null,
+        route: 'external',
+      })
+    } catch {
+      // counting must never block the tool
+    }
+    return undefined
   }))
 
   // A child is a worker. Orchestration belongs to the session that started it:
