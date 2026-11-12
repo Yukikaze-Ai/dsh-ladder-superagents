@@ -1397,6 +1397,17 @@ export function apply(ctx, config) {
       // The worker inherits this session's authority, exactly like a spawned
       // child: a handed-off command must not lose the level it ran with.
       if (activation?.childId) grants.set(String(activation.childId), grantFor(agent))
+      // A hand-off is a ladder call too: without this the stats of a session
+      // that only ever handed commands off look empty.
+      recordUsage({
+        kind: 'start',
+        session: String(agent.session?.id ?? ''),
+        child: String(activation?.childId ?? ''),
+        task: summary.slice(0, 80),
+        tier: '',
+        slot: null,
+        route: 'handoff',
+      })
     }).catch((error) => {
       // The command never started. Say so in the queue instead of leaving the
       // model believing a child is working on it.
@@ -1418,16 +1429,8 @@ export function apply(ctx, config) {
     })
     try {
       const summary = command.replace(/\s+/g, ' ').trim().slice(0, 160)
-      // A hand-off is a ladder call too: without this the stats of a session that
-    // only ever handed commands off look empty.
-    recordUsage({
-      kind: 'start',
-      session: String(agent.session?.id ?? ''),
-      task: summary.slice(0, 80),
-      tier: '',
-      slot: null,
-      route: 'handoff',
-    })
+      // A hand-off is a ladder call too: without this the stats of a session
+    // that only ever handed commands off look empty.
     safeInject(agent, `起了一个子代理去跑（${what}）：\`${summary}\`。它跑完会把结果放进队列，到时候我再通知你。`)
     } catch {
       // the notification is best effort; the command still runs
@@ -2660,6 +2663,29 @@ export function apply(ctx, config) {
 
       await mkdir(join(file, '..'), { recursive: true })
       await appendFile(file, `${JSON.stringify(record)}\n`, 'utf8')
+
+      // A reported child closes its own usage row: a hand-off shows a duration
+      // instead of staying "started, never done" forever.
+      try {
+        const childId = String(session.id)
+        const started = readUsage(5000).find((entry) => entry.kind === 'start'
+          && String(entry.child ?? '') === childId
+          && (entry.route === 'handoff' || entry.route === 'reused'))
+        if (started) {
+          recordUsage({
+            kind: 'done',
+            session: String(started.session ?? parentId),
+            child: childId,
+            task: started.task,
+            tier: started.tier ?? '',
+            slot: started.slot ?? null,
+            route: started.route,
+            ms: Math.max(0, Date.now() - Number(started.at || Date.now())),
+          })
+        }
+      } catch {
+        // accounting must never break a report
+      }
 
       if (parent && isSupa(parent)) {
         const line = `[lane ${record.lane}] ${record.kind}: ${record.text}`
