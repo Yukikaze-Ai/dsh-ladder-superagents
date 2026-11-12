@@ -770,15 +770,50 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         let alive = true
-        request('/supa/state').then((next) => {
-          if (alive) setState(next)
-        }).catch(() => {})
+        let timer = null
+        const load = () => {
+          request('/supa/state').then((next) => {
+            if (alive) setState(next)
+          }).catch(() => {
+            // The host half may still be starting; retry instead of staying
+            // invisible for the rest of the page's life.
+            if (alive) timer = setTimeout(load, 3000)
+          })
+        }
+        load()
         return () => {
           alive = false
+          if (timer) clearTimeout(timer)
         }
       }, [])
 
-      if (!sessionId || !state) return null
+      // Keep the slot occupied even before the state arrives: a control that
+      // vanishes on error is indistinguishable from a broken plugin.
+      if (!sessionId) return null
+      if (!state) {
+        return h('span', {
+          style: {
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            height: 26,
+            padding: '0 8px',
+            fontSize: 12,
+            color: 'var(--dsw-alias-label-secondary, #6b7280)',
+            opacity: 0.7,
+          },
+          title: 'SupA: waiting for the plugin to answer',
+        },
+        h('span', {
+          style: {
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: 'var(--dsw-alias-state-idle-primary, #9aa0aa)',
+          },
+        }),
+        'SupA')
+      }
       const mode = state.config?.mode ?? 'session'
       // "all" means the plugin answers for every session, so the pill is a
       // read-only status there; only "session" mode makes it a switch.
