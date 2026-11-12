@@ -522,29 +522,6 @@ function recordUsage(entry) {
   return usageChain
 }
 
-/**
- * The tail of the usage log, parsed. Reading the last 64 KB instead of the file
- * keeps the per-report lookup cheap; the log is trimmed at 1.5 MB anyway.
- */
-function readUsage(limit = 2000) {
-  try {
-    const lines = readFileSync(usageFileOf(), 'utf8').split('\n').filter(Boolean)
-    return parseUsageLines(lines.slice(-limit))
-  } catch {
-    return []
-  }
-}
-
-function parseUsageLines(lines) {
-  return lines.map((line) => {
-    try {
-      return JSON.parse(line)
-    } catch {
-      return null
-    }
-  }).filter(Boolean)
-}
-
 /** The open start row for a child, or null when it never started or already closed. */
 export function pickOpenStart(records, childId) {
   const id = String(childId ?? '')
@@ -561,6 +538,23 @@ export function pickOpenStart(records, childId) {
 /** One read path for both `supa_stats` and the Stats view, so they cannot drift. */
 export function loadUsage({ hours = 0, session = '' } = {}) {
   return withinSession(withinHours(attributeReuse(readUsage(5000)), hours), session)
+}
+
+function readUsage(limit = 2000) {
+  try {
+    const raw = readFileSync(usageFileOf(), 'utf8')
+    const lines = raw.split('\n').filter(Boolean)
+    const slice = lines.slice(-limit)
+    return slice.map((line) => {
+      try {
+        return JSON.parse(line)
+      } catch {
+        return null
+      }
+    }).filter(Boolean)
+  } catch {
+    return []
+  }
 }
 
 /**
@@ -1374,7 +1368,7 @@ export function apply(ctx, config) {
   const handedOff = new Map()
   const HAND_OFF_DEDUPE_MS = 60_000
 
-  const handOffCommand = async (agent, command, what = 'a blocking command', workdir = '', signal) => {
+  const handOffCommand = (agent, command, what = 'a blocking command', workdir = '', signal) => {
     const subagents = ctx.get?.('subagents')
     if (!subagents || !agent) return 'unavailable'
 
@@ -1411,19 +1405,31 @@ export function apply(ctx, config) {
     const request = { prompt: textBlocks(brief), parent: agent }
     const maxDepth = subagents.resolveMaxDepth?.()
     if (typeof maxDepth === 'number') request.maxDepth = maxDepth
-    let activation
-    try {
-      activation = await subagents.startActivation({
-        provider: cfg.spawnProvider || 'spawn',
-        label: 'handed-off command',
-        request,
-        // startActivation calls throwIfAborted on this, so it must be a signal.
-        signal: signal ?? new AbortController().signal,
-        delivery: 'parent',
+    subagents.startActivation({
+      provider: cfg.spawnProvider || 'spawn',
+      label: 'handed-off command',
+      request,
+      // startActivation calls throwIfAborted on this, so it must be a signal.
+      signal: signal ?? new AbortController().signal,
+      delivery: 'parent',
+    }).then((activation) => {
+      // The worker inherits this session's authority, exactly like a spawned
+      // child: a handed-off command must not lose the level it ran with.
+      if (activation?.childId) grants.set(String(activation.childId), grantFor(agent))
+      // A hand-off is a ladder call too: without this the stats of a session
+      // that only ever handed commands off look empty.
+      recordUsage({
+        kind: 'start',
+        session: String(agent.session?.id ?? ''),
+        child: String(activation?.childId ?? ''),
+        task: summary.slice(0, 80),
+        tier: '',
+        slot: null,
+        route: 'handoff',
       })
-    } catch (error) {
-      // The command never started. Say so in the queue AND to the caller, so the
-      // model does not believe a child is working on it.
+    }).catch((error) => {
+      // The command never started. Say so in the queue instead of leaving the
+      // model believing a child is working on it.
       handedOff.delete(key)
       try {
         const inbox = inboxFileFor(agent.session)
@@ -1439,24 +1445,17 @@ export function apply(ctx, config) {
       } catch {
         // nothing else to do
       }
-      return 'failed'
-    }
-
-    // The worker inherits this session's authority, exactly like a spawned
-    // child: a handed-off command must not lose the level it ran with.
-    if (activation?.childId) grants.set(String(activation.childId), grantFor(agent))
-    // A hand-off is a ladder call too: without this the stats of a session
-    // that only ever handed commands off look empty.
-    recordUsage({
-      kind: 'start',
-      session: String(agent.session?.id ?? ''),
-      child: String(activation?.childId ?? ''),
-      task: summary.slice(0, 80),
-      tier: '',
-      slot: null,
-      route: 'handoff',
+      // The tool result already said "handed to a child", so the correction has
+      // to reach the conversation as well: a queue note alone is never read.
+      try {
+        safeInject(agent, `转交失败：\`${summary}\` 没有执行（${String(error?.message ?? error)}）。需要重新跑这条命令。`)
+      } catch {
+        // best effort
+      }
     })
     try {
+      // A hand-off is a ladder call too: without this the stats of a session
+      // that only ever handed commands off look empty.
       safeInject(agent, `起了一个子代理去跑（${what}）：\`${summary}\`。它跑完会把结果放进队列，到时候我再通知你。`)
     } catch {
       // the notification is best effort; the command still runs
@@ -1481,7 +1480,7 @@ export function apply(ctx, config) {
     .replace(/^["']|["']$/g, '')
   const looksLong = (command) => statementsOf(command)
     .some((part) => LONG_COMMAND.test(part) || LONG_COMMAND.test(unwrapStatement(part)))
-  ctx.effect(() => ctx.tools.guard(async (execution) => {
+  ctx.effect(() => ctx.tools.guard((execution) => {
     if (!execution || !isSupa(execution.agent)) return undefined
     if (execution.name !== 'pwsh' && execution.name !== 'bash') return undefined
     // A child exists to run the command. Handing off from a child would spawn a
@@ -1509,17 +1508,13 @@ export function apply(ctx, config) {
     }
     if (!what) return undefined
 
-    const handed = await handOffCommand(execution.agent, command, what, String(args.workdir ?? ''), execution.signal)
+    const handed = handOffCommand(execution.agent, command, what, String(args.workdir ?? ''), execution.signal)
     if (handed === 'full') {
       return `You already have ${cfg.maxChildren} workers running (maxChildren), so this command was not handed off either. `
         + 'Wait for one to report into `supa_inbox`, or run it with `run_in_background: true`.'
     }
     if (handed === 'spawned') {
       return `Handed to a child instead of blocking this turn (${what}). It runs the command and reports the output into \`supa_inbox\`; do not wait for it, keep working.`
-    }
-    if (handed === 'failed') {
-      return `The hand-off could not start (${what}), so this command did NOT run. `
-        + 'The reason is in `supa_inbox` as a blocked record. Run it again, or use `run_in_background: true`.'
     }
     if (handed === 'duplicate') {
       return `This exact command was handed to a child less than a minute ago and is still running. `
@@ -1546,9 +1541,6 @@ export function apply(ctx, config) {
         tier: '',
         slot: null,
         route: 'external',
-        // Nothing closes an external row: the platform owns that child, so this
-        // is a count, not a duration.
-        countOnly: true,
       })
     } catch {
       // counting must never block the tool
@@ -1676,9 +1668,9 @@ export function apply(ctx, config) {
     },
     isConcurrencySafe: () => true,
     async execute(args, exec) {
-      // Default to this session: the file is shared by the whole profile.
       const sessionId = args.scope === 'all' ? '' : String(exec?.agent?.session?.id ?? '')
       const records = loadUsage({ hours: Number(args.hours) || 0, session: sessionId })
+
       if (records.length === 0) {
         return sessionId
           ? 'no usage recorded for this session in that window (try scope: "all" for the whole profile)'
@@ -2451,9 +2443,10 @@ export function apply(ctx, config) {
     return settingsState()
   }
 
-  const webServer = ctx.get?.('webServer')
-  if (webServer?.register) {
-    ctx.effect(() => {
+  // The web server can bind after this plugin mounts (a restart showed every
+  // route missing). Register when it appears instead of checking once.
+  const registerWebRoutes = (webServer) => ctx.effect(() => {
+    {
       const disposers = [
         webServer.register({
           kind: 'exact',
@@ -2523,8 +2516,36 @@ export function apply(ctx, config) {
           }
         }
       }
-    })
-  }
+    }
+  })
+
+  ctx.effect(() => {
+    let timer = null
+    let attempts = 0
+    let disposeRoutes = null
+    const attempt = () => {
+      if (disposeRoutes) return
+      const server = ctx.get?.('webServer')
+      if (server?.register) {
+        disposeRoutes = registerWebRoutes(server)
+        return
+      }
+      if (attempts >= 60) return // give up after about 30 seconds
+      attempts += 1
+      timer = setTimeout(attempt, 500)
+    }
+    attempt()
+    return () => {
+      if (timer) clearTimeout(timer)
+      if (disposeRoutes) {
+        try {
+          disposeRoutes()
+        } catch {
+          // already gone
+        }
+      }
+    }
+  })
 
   const contextTool = {
     name: 'supa_context',
@@ -2697,7 +2718,7 @@ export function apply(ctx, config) {
       await appendFile(file, `${JSON.stringify(record)}\n`, 'utf8')
 
       // Only a final report closes the row: a progress update would otherwise
-      // write a second `done` and halve the average duration.
+      // write a second done and halve the average duration.
       if (record.kind === 'result' || record.kind === 'blocked') {
         try {
           const started = pickOpenStart(readUsage(5000), session.id)
