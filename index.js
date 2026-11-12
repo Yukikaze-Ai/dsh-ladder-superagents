@@ -1383,6 +1383,7 @@ export function apply(ctx, config) {
       '',
       'Do not run anything else. Report the exit status and the tail of the output with `supa_report` (kind: result).',
     ].join('\n')
+    const summary = command.replace(/\s+/g, ' ').trim().slice(0, 160)
     const request = { prompt: textBlocks(brief), parent: agent }
     const maxDepth = subagents.resolveMaxDepth?.()
     if (typeof maxDepth === 'number') request.maxDepth = maxDepth
@@ -1428,10 +1429,9 @@ export function apply(ctx, config) {
       }
     })
     try {
-      const summary = command.replace(/\s+/g, ' ').trim().slice(0, 160)
       // A hand-off is a ladder call too: without this the stats of a session
-    // that only ever handed commands off look empty.
-    safeInject(agent, `起了一个子代理去跑（${what}）：\`${summary}\`。它跑完会把结果放进队列，到时候我再通知你。`)
+      // that only ever handed commands off look empty.
+      safeInject(agent, `起了一个子代理去跑（${what}）：\`${summary}\`。它跑完会把结果放进队列，到时候我再通知你。`)
     } catch {
       // the notification is best effort; the command still runs
     }
