@@ -322,6 +322,10 @@ marked `good first issue`.
 
 Release notes live in [CHANGELOG.md](CHANGELOG.md).
 
+Rebuilding this on another host — or porting it to Claude — is described in
+[DESIGN.md](docs/DESIGN.md): the four mechanisms, the three invariants, and the
+host capabilities each one needs.
+
 
 
 

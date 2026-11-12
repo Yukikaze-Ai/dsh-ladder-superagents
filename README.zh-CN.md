@@ -304,5 +304,9 @@ Bug 和复现是最有用的贡献。阅读
 
 发布说明位于 [CHANGELOG.md](CHANGELOG.md)。
 
+想在别的宿主上复刻，或移植到 Claude，见 [DESIGN.md](docs/DESIGN.md)：四个机制、
+三条不变量，以及每个机制需要宿主提供什么能力。
+
+
 
 
