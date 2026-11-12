@@ -976,6 +976,7 @@ window.__ModuleLoader__.load({
       'language': '界面语言',
       'auto': '自动',
       'This session': '本会话',
+      'This view has no session id, so only the profile total is available.': '这个视图没有会话 id，只能看整个 profile 的合计。',
       'Whole profile': '全部会话',
       'Nothing verified yet. Uncheck verified only, then press Pin on a model - one real call proves it.': '还没有验证过任何模型。取消勾选"只看已验证"，然后点某个模型旁的"测试"——一次真实调用就能证明它可用。',
       'Saving rewrites this plugin row in the profile config, which restarts it for about a second.': '保存会改写 profile 里的插件行，插件重启约一秒。',
@@ -1035,7 +1036,7 @@ window.__ModuleLoader__.load({
       const [hours, setHours] = useState('24')
       // The usage log is shared by the whole profile, so the view starts scoped
       // to this session and offers the profile totals separately.
-      const [scope, setScope] = useState('session')
+      const [scope, setScope] = useState(sessionId ? 'session' : 'all')
 
       const load = useCallback(async () => {
         setBusy(true)
@@ -1177,7 +1178,8 @@ window.__ModuleLoader__.load({
             h('button', {
               key: 'scope-session',
               style: scope === 'session' ? segmentActive : segmentIdle,
-              disabled: busy,
+              disabled: busy || !sessionId,
+              title: sessionId ? '' : t('This view has no session id, so only the profile total is available.'),
               onClick: () => setScope('session'),
             }, t('This session')),
             h('button', {
@@ -1252,6 +1254,8 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
+
 
 
 
