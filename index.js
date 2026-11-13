@@ -2739,15 +2739,10 @@ export function apply(ctx, config) {
         }
       }
 
+      // Status goes into the environment, not the conversation: the parent
+      // pulls from the queue when it is ready. Only a short "there is work"
+      // pointer is injected, and only while the parent is idle.
       if (parent && isSupa(parent)) {
-        const line = `[lane ${record.lane}] ${record.kind}: ${record.text}`
-        if (!safeInject(parent, line)) {
-          try {
-            await subagents?.sendMessage?.(agent, parentId, textBlocks(line), { signal: exec.signal })
-          } catch {
-            // the durable queue entry is still there for the parent to drain
-          }
-        }
         const pending = pendingReportsOf(file)
         scheduleInboxWake(parent, pending.length, lanesOf(pending).length)
       }
