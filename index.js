@@ -1408,7 +1408,7 @@ export function apply(ctx, config) {
     subagents.startActivation({
       provider: cfg.spawnProvider || 'spawn',
       label: 'handed-off command',
-      request,
+      ...request,
       // startActivation calls throwIfAborted on this, so it must be a signal.
       signal: signal ?? new AbortController().signal,
       delivery: 'parent',
@@ -3285,13 +3285,19 @@ export function apply(ctx, config) {
 
         const request = { ...baseRequest }
         if (tier) request.agentOptions = routeOptions(tier)
-        const activation = await subagents.startActivation({
-          provider: cfg.spawnProvider || 'spawn',
-          label: first ? label : `${label} (retry ${attempt})`,
-          request,
-          signal: first ? exec.signal : retrySignal,
-          delivery: 'parent',
-        })
+        let activation
+        try {
+          activation = await subagents.startActivation({
+            provider: cfg.spawnProvider || 'spawn',
+            label: first ? label : `${label} (retry ${attempt})`,
+            ...request,
+            signal: first ? exec.signal : retrySignal,
+            delivery: 'parent',
+          })
+        } catch (error) {
+          const frame = String(error?.stack ?? '').split('\n').slice(1, 3).join(' | ')
+          throw new Error(`startActivation failed: ${String(error?.message ?? error)} @@ ${frame}`)
+        }
         grants.set(String(activation.childId), authority)
         const startedAt = Date.now()
         recordUsage({
@@ -3533,6 +3539,8 @@ export function apply(ctx, config) {
 
   log(`active (mode=${cfg.mode}, ledger=${cfg.ledgerDir}, autoApprove=${cfg.autoApprove})`)
 }
+
+
 
 
 
