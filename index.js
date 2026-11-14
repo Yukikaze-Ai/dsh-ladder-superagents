@@ -114,6 +114,7 @@ const CHARTER = [
   'Route work by difficulty. Rate a task 1-10 (1 = a 4B model can do it, 10 = contradictory or missing information needing judgment) and pass `difficulty` to `supa_spawn`: the ladder picks the weakest tier that still covers the score, and degrades to the strongest available tier when nothing covers it. `supa_models list` shows the ladder and the routes the runtime actually advertises.',
   'Delegate in chunks, not in atoms. A chunk is worth a worker when it has two or more steps, needs a decision, or runs something (a build, a test, a search across files): spawn it, keep working, then drain `supa_inbox` and pick what matters. A single read, a single edit, a commit, or a question to the user stays in your hands — a worker turn costs more than those.',
   'Start independent chunks together. When two pieces of work do not depend on each other, spawn both in the same turn instead of waiting for the first; the ladder runs them in parallel and both results land in `supa_inbox`.',
+  'Coordinate on the shared board when it is available. For work that involves more than one worker, create the tasks with `team_task_create` first, pass the task id as `task` to `supa_spawn`, and read progress with `team_task_list` instead of asking each worker for a status. The board is the shared environment; the inbox carries results, not status.',
   'Reuse a worker you already started when the follow-up is related: `supa_spawn` with `continue: <childId>` sends it a message and keeps its context, while a new spawn pays for the system prompt and the whole context pack again.',
   'Delegate with `supa_spawn` only. The platform `subagent` and `subagent_fork` tools bypass the ladder: no tier is chosen, no cost is recorded, and the result does not reach `supa_inbox`. If you catch yourself reaching for one of them, use `supa_spawn` instead.',
   'Show your work while it runs. Before a run of more than a couple of tool calls, state in one line what you are about to do and why — the user is watching a spinner, not your progress, and silence reads as "gone". Report the outcome as soon as you have it.',
@@ -2895,6 +2896,10 @@ export function apply(ctx, config) {
           type: 'string',
           description: 'Explicit ladder tier id from `supa_models list`, bypassing the difficulty ranking.',
         },
+        task: {
+          type: 'string',
+          description: 'Id of a team task on the shared board. The worker reads it with team_task_get, claims it, does the work, and marks it complete before reporting.',
+        },
       },
       required: ['brief'],
     },
@@ -3002,6 +3007,20 @@ export function apply(ctx, config) {
       }
 
       parts.push(`# SupA assignment: ${label}`)
+      // The team board is the shared environment: hand a task id to the worker
+      // and let it claim and complete the task instead of reporting status up.
+      const teamTask = typeof args.task === 'string' ? args.task.trim() : ''
+      if (teamTask) {
+        parts.push([
+          '## Work item',
+          `This assignment is team task \`${teamTask}\`.`,
+          `1. Read it with \`team_task_get\` (task_id: "${teamTask}").`,
+          '2. Claim it with `team_task_update`: action "claim", expected_revision from that read.',
+          '3. Do the work.',
+          '4. Mark it complete with `team_task_update`: action "complete", the latest revision.',
+          'Then report the result to your parent with `supa_report`.',
+        ].join('\n'))
+      }
       parts.push('## Brief\n' + String(args.brief))
       if (args.acceptance) parts.push('## Acceptance\n' + String(args.acceptance))
 
