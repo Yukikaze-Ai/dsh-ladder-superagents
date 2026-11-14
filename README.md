@@ -4,6 +4,13 @@
 
 **English** · [中文](README.zh-CN.md)
 
+> **Needs DSH 0.2.2 or newer.** 0.3.0 targets the harness that flattened
+> `subagents.startActivation` and shipped the agent-team task board. On an older
+> DSH, keep version 0.2.1: the harness rejects a nested activation request and
+> every spawn fails with "Cannot read properties of undefined".
+> `engines.dsh` in `package.json` says so, and the plugin manager refuses to
+> install it below that version.
+>
 > **0.1 is Windows-only.** CLI discovery, `.cmd` launching and path handling are
 > written for Windows. On macOS and Linux the llm tiers work, the CLI tiers do
 > not. `os: ["win32"]` in `package.json` says so.

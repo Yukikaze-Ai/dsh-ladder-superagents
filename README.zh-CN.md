@@ -4,6 +4,12 @@
 
 [English](README.md) · **中文**
 
+> **需要 DSH 0.2.2 或更新版本。** 0.3.0 面向的是把
+> `subagents.startActivation` 参数摊平、并带上了智能体团队任务板的那个版本。
+> 更旧的 DSH 请留在 0.2.1：新代码传的是摊平参数，旧宿主会以
+> “Cannot read properties of undefined” 拒绝每一次派活。
+> `package.json` 的 `engines.dsh` 已声明，插件管理器不会在低版本上安装它。
+>
 > **0.1 仅支持 Windows。** CLI 发现、`.cmd` 启动和路径处理都是按 Windows
 > 编写的。在 macOS 和 Linux 上，llm 层级可用，CLI 层级不可用。
 > `package.json` 里的 `os: ["win32"]` 已经写明了这一点。

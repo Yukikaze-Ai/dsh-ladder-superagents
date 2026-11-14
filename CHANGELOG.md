@@ -2,6 +2,37 @@
 
 All notable changes to this plugin. Dates are ISO.
 
+## 0.3.0 — 2026-11-13
+
+Targets the harness that flattened `subagents.startActivation` and shipped the
+agent-team task board. **Breaking for older hosts:** below DSH 0.2.2 every spawn
+is rejected, so `engines.dsh` now blocks the install there and 0.2.1 stays the
+version for that host.
+
+### Added
+
+- **Team board integration.** `supa_spawn` takes `task`, and the worker reads the
+  task, claims it with its revision, does the work, completes it and then
+  reports; the charter tells a SupA to create tasks first and read progress from
+  `team_task_list` instead of collecting status messages. The id is only passed
+  when `agentTeams.isEnabled` is true for this session.
+- **Session-scoped statistics**, a `scope` switch in the Stats view, and reuse
+  attribution: a continued worker's call counts on the tier that did the work.
+- **Hand-off and platform-subagent accounting**: `handoff` and `external` rows,
+  so a session that delegated looks different from one that did nothing.
+
+### Fixed
+
+- The activation spec is spread into the call instead of nested under `request`,
+  which is what the new harness expects.
+- A hand-off closes its usage row when the worker reports, and only a final
+  report does that: a progress update used to write a second `done` and halve
+  the average.
+- Routes register when the web server appears instead of never when the plugin
+  mounted first.
+- The SupA pill stays visible and retries while the host half answers, instead
+  of disappearing.
+
 ## 0.2.0 — 2026-11-10
 
 Closes a hole in the ladder, makes a child a worker rather than a second SupA,
