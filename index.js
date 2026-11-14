@@ -3010,7 +3010,8 @@ export function apply(ctx, config) {
       // The team board is the shared environment: hand a task id to the worker
       // and let it claim and complete the task instead of reporting status up.
       const teamTask = typeof args.task === 'string' ? args.task.trim() : ''
-      if (teamTask) {
+      const teamReady = teamTask ? (ctx.get?.('agentTeams')?.isEnabled?.(agent) ?? false) : false
+      if (teamTask && teamReady) {
         parts.push([
           '## Work item',
           `This assignment is team task \`${teamTask}\`.`,
