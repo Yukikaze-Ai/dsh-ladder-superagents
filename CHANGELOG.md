@@ -32,6 +32,10 @@ version for that host.
   mounted first.
 - The SupA pill stays visible and retries while the host half answers, instead
   of disappearing.
+- **macOS and Linux install again**: the `os: win32` guard is gone. The code
+  already branches on `process.platform` for `.cmd` shims, PATH lookup and
+  quoting, so llm tiers work everywhere; CLI tiers outside Windows stay
+  experimental until someone verifies one.
 
 ## 0.2.0 — 2026-11-10
 
@@ -169,3 +173,4 @@ First published version. Windows only.
   subscription and `kimi` needs a Kimi account; neither was run here.
 - No automated tests.
 - The settings routes do not authenticate their caller.
+

@@ -11,9 +11,14 @@
 > `engines.dsh` in `package.json` says so, and the plugin manager refuses to
 > install it below that version.
 >
-> **0.1 is Windows-only.** CLI discovery, `.cmd` launching and path handling are
-> written for Windows. On macOS and Linux the llm tiers work, the CLI tiers do
-> not. `os: ["win32"]` in `package.json` says so.
+> **Windows is the verified platform.** Every CLI driver was built and run on
+> Windows: `.cmd`/`.bat` shims go through the shell, PATH lookup uses Windows
+> extensions, and argument quoting is Windows-aware. The code branches on
+> `process.platform` for all three, so on macOS and Linux the llm tiers work and
+> native CLI binaries (codex, claude, …) should work too — but that path has not
+> been verified yet. `os` is no longer restricted, so the package installs
+> anywhere; treat CLI tiers outside Windows as experimental until someone
+> reports a run.
 >
 > Of the ten CLI drivers, only **codex** is verified. kimi, claude, gemini,
 > qwen, cursor, opencode, aider, copilot and goose are implemented from each

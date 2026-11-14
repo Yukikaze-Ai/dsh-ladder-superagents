@@ -2,7 +2,7 @@
   "name": "dsh-ladder-superagents",
   "version": "0.3.0",
   "type": "module",
-  "description": "Tiered subagents for DeepSeek Harness: a ten-slot model ladder, difficulty routing, automatic fallback and real-call verification. Needs DSH 0.2.2 or newer; Windows-only.",
+  "description": "Tiered subagents for DeepSeek Harness: a ten-slot model ladder, difficulty routing, automatic fallback and real-call verification. Needs DSH 0.2.2 or newer.",
   "engines": {
     "dsh": ">=0.2.2-0"
   },
@@ -28,9 +28,6 @@
     "docs/img/*.png",
     "README.zh-CN.md",
     "icon.png"
-  ],
-  "os": [
-    "win32"
   ],
   "scripts": {
     "test": "node --test",

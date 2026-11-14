@@ -10,9 +10,12 @@
 > “Cannot read properties of undefined” 拒绝每一次派活。
 > `package.json` 的 `engines.dsh` 已声明，插件管理器不会在低版本上安装它。
 >
-> **0.1 仅支持 Windows。** CLI 发现、`.cmd` 启动和路径处理都是按 Windows
-> 编写的。在 macOS 和 Linux 上，llm 层级可用，CLI 层级不可用。
-> `package.json` 里的 `os: ["win32"]` 已经写明了这一点。
+> **Windows 是已验证的平台。** 十个 CLI 驱动都是在 Windows 上开发和实跑的：
+> `.cmd`/`.bat` 走 shell、PATH 查找带 Windows 扩展名、参数引用也区分平台。
+> 代码里这三处都按 `process.platform` 分支，所以 macOS 和 Linux 上 llm 层级
+> 可用，原生 CLI 二进制（codex、claude 等）理论上也能用——但那条路径**还没
+> 验证过**。`os` 限制已经移除，任何平台都能安装；在有人报告成功之前，
+> 非 Windows 的 CLI 层级请当作实验性。
 >
 > 十个 CLI 驱动中只有 **codex** 经过验证。kimi、claude、gemini、
 > qwen、cursor、opencode、aider、copilot 和 goose 都是按各自 CLI 的
