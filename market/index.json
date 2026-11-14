@@ -24,6 +24,12 @@
           "zh": "Windows"
         }
       },
+      "macos": {
+        "title": {
+          "en": "macOS",
+          "zh": "macOS"
+        }
+      },
       "experimental": {
         "title": {
           "en": "Experimental",
@@ -62,6 +68,7 @@
         ],
         "labels": [
           "windows",
+          "macos",
           "experimental"
         ],
         "sortKeys": {}

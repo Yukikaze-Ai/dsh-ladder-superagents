@@ -37,7 +37,7 @@ first line of output are enough.
 
 | Driver | Binary | Prompt | Status | Account needed |
 | --- | --- | --- | --- | --- |
-| `codex` | discovered (`codex.exe`, PATH) | stdin | **verified** | Codex / ChatGPT |
+| `codex` | discovered (`codex` on PATH; Windows checks the Codex app root too) | stdin | **verified** | Codex / ChatGPT |
 | `claude` | `claude` | stdin | unverified | paid Claude subscription |
 | `kimi` | `kimi` | argument | unverified | Kimi account |
 | `gemini` | `gemini` | argument | unverified | Google account or API key |
@@ -61,8 +61,13 @@ codex exec [--ephemeral] --skip-git-repo-check -C <cwd> --color never -o <file> 
 ```
 
 Prompt on stdin. `-s workspace-write` is the sandbox for `authority: workspace`;
-`full` maps to `danger-full-access`. Two Codex builds can exist on one machine;
-the plugin prefers the newest under `%LOCALAPPDATA%\OpenAI\Codex\bin`.
+`full` maps to `danger-full-access`. Two Codex builds can exist on one machine:
+on Windows the plugin prefers the newest under
+`%LOCALAPPDATA%\OpenAI\Codex\bin`, then `~/.codex\plugins` and `~/.cargo\bin`.
+On macOS and Linux `PATH` decides — Homebrew, npm, nvm and the vendor installers
+all put `codex` there — then `~/.codex/bin`, `~/.local/bin` and `~/.cargo/bin`.
+`supa_models list` prints the path it resolved, so a wrong build is visible
+before a call is spent.
 
 ### claude
 
@@ -143,9 +148,27 @@ goose run -t <prompt>
 
 - **Argument prompts are length-limited** on Windows (about 8k characters) and go
   through `quoteForShell`. Long briefs are fine for `codex` and `claude`
-  (stdin), risky for the rest.
+  (stdin), risky for the rest. On macOS the limit is about 1 MB, so an argument
+  driver is safe there; a POSIX binary is never quoted, because it is spawned
+  directly.
+- **The launcher's PATH is augmented**: the inherited `PATH`, then Homebrew,
+  MacPorts, `~/.local/bin`, `~/.opencode/bin`, the cargo/bun/volta/asdf bins, the
+  newest nvm/fnm node bin and `~/Library/pnpm`. That matters when the Harness was
+  opened from the Dock: launchd does not pass a login shell's PATH, so an
+  npm-installed CLI would otherwise be invisible.
+- **A timeout kills the process group** on POSIX (SIGTERM, then SIGKILL after
+  2 s), so a helper a CLI started does not outlive the tier.
 - **A CLI tier is a child process, not a Harness session**: neither the approval
   system nor the authority bookkeeping governs it. The authority ceiling maps
   onto each CLI's own bypass flag, and that is the whole control.
 - **Verification costs money**: one probe is one real call. Do not press `Pin` or
   `Retry` in a loop.
+
+## Verifying a driver on macOS
+
+The steps are the same; only the install and the binary lookup differ. Install
+the CLI the way its own documentation says (Homebrew, npm, pipx or the vendor
+script), confirm `<binary> --version` in a terminal, then press **Retry** on the
+tier. `supa_models list` prints the codex path it resolved. A driver that works
+in your terminal but not from the Harness is a PATH problem, not a driver
+problem: check that line first.

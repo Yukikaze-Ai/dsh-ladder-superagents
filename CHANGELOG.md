@@ -2,6 +2,60 @@
 
 All notable changes to this plugin. Dates are ISO.
 
+## 0.3.1 — 2026-11-13
+
+The CLI tiers run on macOS. An llm tier is untouched, and Windows keeps the
+behaviour it was verified with.
+
+### Fixed
+
+- **CLI discovery outside Windows.** `findCodex` no longer looks only at
+  `%LOCALAPPDATA%` and `.exe` paths: on macOS and Linux PATH decides (Homebrew,
+  npm, nvm, pipx and the vendor installers all put the binary there), then
+  `~/.codex/bin`, `~/.local/bin` and `~/.cargo/bin`. Windows still checks the
+  Codex app install root first, then PATH.
+- **A Host opened from the Dock finds the CLI it was told to run.** A child now
+  gets PATH plus the install roots launchd does not pass down — `/opt/homebrew/bin`,
+  `/usr/local/bin`, `/opt/local/bin`, `~/.local/bin`, `~/.opencode/bin`,
+  `~/.cargo/bin`, `~/.bun/bin`, `~/.volta/bin`, the asdf shims, the newest
+  nvm/fnm node bin and `~/Library/pnpm` — so an npm shim's
+  `#!/usr/bin/env node` shebang resolves and a Dock-launched DSH behaves like a
+  terminal one.
+- **PATH lookup checks the executable bit on POSIX**, the way a shell does, and
+  a name that resolves nowhere is reported as `… CLI not found` instead of
+  failing later with `EACCES`. A directory that happens to share the name is not
+  an executable either.
+- **A timeout kills the whole CLI process tree on POSIX.** The CLI leads its own
+  process group, gets SIGTERM, then SIGKILL two seconds later, so a helper that
+  `codex exec` or `claude -p` started is not left running after the tier was
+  marked failed.
+- **A CLI started with no locale** (`LANG`/`LC_ALL`/`LC_CTYPE` unset, the normal
+  case for an app opened from the Dock) gets a UTF-8 one, so non-ASCII output is
+  not mangled.
+- **A tier's `command` accepts `~`**, expanded against the Home directory.
+- **The shell hand-off knows the macOS tools**: `brew install`, `port install`,
+  `xcodebuild`, `pod install` and `swift build` are treated like `npm install` —
+  run by a child instead of holding the turn open. The classifier now lives
+  outside `apply()` and is exported, so `npm test` covers it.
+- `supa_models list` prints the resolved codex path, or says it was not found,
+  instead of echoing a name that may not exist.
+
+### Added
+
+- **`test/platform.test.js`**: executable discovery, PATH augmentation, the
+  executable bit, `~` expansion, stdin and argument prompts, the child's
+  environment, the timeout's process-group kill, and an npm shim finding its
+  node shebang when PATH is only launchd's, all driven through a fixture CLI;
+  plus the shell hand-off classifier, macOS tools included. The Windows `.cmd`
+  shim case runs on Windows and is skipped elsewhere.
+
+### Docs
+
+- The READMEs, `docs/CLI-DRIVERS.md`, the roadmap and the contributing guide now
+  describe the platform layer instead of calling everything outside Windows
+  experimental. What is verified where is stated exactly: the launcher on macOS,
+  and codex on Windows only.
+
 ## 0.3.0 — 2026-11-13
 
 Targets the harness that flattened `subagents.startActivation` and shipped the

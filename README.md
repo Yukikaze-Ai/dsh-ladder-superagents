@@ -11,20 +11,25 @@
 > `engines.dsh` in `package.json` says so, and the plugin manager refuses to
 > install it below that version.
 >
-> **Windows is the verified platform.** Every CLI driver was built and run on
-> Windows: `.cmd`/`.bat` shims go through the shell, PATH lookup uses Windows
-> extensions, and argument quoting is Windows-aware. The code branches on
-> `process.platform` for all three, so on macOS and Linux the llm tiers work and
-> native CLI binaries (codex, claude, …) should work too — but that path has not
-> been verified yet. `os` is no longer restricted, so the package installs
-> anywhere; treat CLI tiers outside Windows as experimental until someone
-> reports a run.
+> **Windows and macOS.** The ladder, the routes, the settings page and the llm
+> tiers are platform-independent. The CLI tiers branch on `process.platform`:
+> Windows runs a `.cmd`/`.bat` shim through the shell with Windows quoting and
+> PATH extensions; macOS and Linux execute the binary directly, so an npm
+> shim's `#!/usr/bin/env node` shebang resolves. The launcher also adds the
+> install roots a Dock-launched Host does not inherit (`/opt/homebrew/bin`,
+> `/usr/local/bin`, `~/.local/bin`, `~/.opencode/bin`, `~/.cargo/bin`, the
+> nvm/fnm/volta/asdf bins, `~/Library/pnpm`) and kills the CLI's whole process
+> group on a timeout. The launcher is **verified on macOS with fixture CLIs**
+> under `npm test` (discovery, stdin, argument prompts, timeout kill); no Codex
+> is installed on that Mac, so **codex itself is still only verified on
+> Windows**, and Linux follows the same POSIX path untested.
 >
 > Of the ten CLI drivers, only **codex** is verified. kimi, claude, gemini,
 > qwen, cursor, opencode, aider, copilot and goose are implemented from each
 > CLI's documented invocation but were never run against a working account —
 > claude in particular needs a paid Claude subscription, and kimi needs a Kimi
-> account. Treat all nine as experimental.
+> account. Treat all nine as experimental. The launcher underneath them is
+> verified on macOS with a fixture CLI; a real account is what they still need.
 >
 > Approval behaviour is **inherited**: the plugin answers no approval request
 > by itself. `autoApprove: true` is an explicit opt-in, not a default.
@@ -102,7 +107,7 @@ Set on the `supa` row in the bundle's `cordis.patch.yml`:
 | `maxRouteRetries` | `2` | Stop descending after this many retries |
 | `tierAttempts` | `2` | Attempts on the same tier before it is marked and its slot freed |
 | `tierRetryDelayMs` | `1200` | Pause before retrying the same tier |
-| `codexCommand` | `''` | Absolute path to the codex CLI; empty discovers `~/.codex/plugins/*/codex.exe` then `~/.cargo/bin/codex.exe` |
+| `codexCommand` | `''` | Absolute path to the codex CLI; empty discovers `codex` on the augmented PATH, then `~/.codex/bin`, `~/.local/bin` and `~/.cargo/bin` (Windows checks the Codex app install root first) |
 | `cliTimeoutMs` | `900000` | Kill a codex run after this long |
 | `maxCliResultChars` | `8000` | Cap on the result queued back to the parent |
 | `maxPackBytes` | `24000` | Context pack cap |
@@ -254,23 +259,39 @@ plumbing (spawn, stdin, timeout, result queue, degradation).
 | `copilot` | `copilot` | `copilot -p "<prompt>"` | argument |
 | `goose` | `goose` | `goose run -t "<prompt>"` | argument |
 
-Exercised on this machine: `codex`, `kimi`. The rest are documented
-invocations, not run here — a wrong flag fails loudly and can be fixed with the
-tier's `command` field.
+Exercised on the Windows machine that built this plugin: `codex`, `kimi`. The
+rest are documented invocations, not run against an account — a wrong flag
+fails loudly and can be fixed with the tier's `command` field.
 
-### Windows vs macOS
+### Platforms
 
-- An npm-installed CLI on Windows is a `.cmd` shim, which `spawn` cannot
+- On Windows an npm-installed CLI is a `.cmd` shim, which `spawn` cannot
   execute directly. The launcher detects `.cmd`/`.bat` and runs through the
-  shell with argument quoting.
+  shell with argument quoting. On macOS and Linux the binary is executed
+  as-is, so a `#!/usr/bin/env node` shim resolves.
 - Executable lookup walks `PATH` with `.exe`/`.cmd`/`.bat` on Windows and the
-  bare name elsewhere; a tier's explicit `command` always wins.
+  bare name elsewhere, plus the install roots a GUI-launched Host does not
+  inherit: `/opt/homebrew/bin` and `/usr/local/bin` (Homebrew), `/opt/local/bin`
+  (MacPorts), `~/.local/bin`, `~/.opencode/bin`, `~/.cargo/bin`, `~/.bun/bin`,
+  `~/.volta/bin`, the asdf shims, the newest nvm or fnm node bin, and
+  `~/Library/pnpm`. The inherited `PATH` always comes first and a tier's
+  explicit `command` always wins; `~` in that command is expanded.
+- On POSIX a name found on `PATH` must have the executable bit, the way a
+  shell resolves it. A binary that is absent everywhere is reported as
+  `… CLI not found` rather than failing later with `EACCES`.
+- A CLI started with no locale (`LANG`/`LC_ALL`/`LC_CTYPE` all unset, common
+  for an app opened from the Dock) gets a UTF-8 one, so non-ASCII output is
+  intact.
+- A run that reaches `cliTimeoutMs` gets SIGTERM on its whole process group,
+  then SIGKILL two seconds later. The helpers a CLI started (`codex exec`,
+  `claude -p`) do not outlive the tier that timed out.
 - Prefer stdin drivers on Windows: a command line is capped near 32k
-  characters, so a 24 KB context pack passed as an argument is risky. The
-  argument drivers are fine for short briefs.
+  characters, so a 24 KB context pack passed as an argument is risky. On macOS
+  the limit is about 1 MB, so the argument drivers are safe there.
 - Config homes differ (`%USERPROFILE%\.codex` vs `~/.codex`, `%APPDATA%` vs
-  `~/.config`), which is why the codex binary is discovered from its install
-  root rather than assumed to be on `PATH`.
+  `~/.config`). On Windows the codex binary is discovered from the Codex app
+  install root first; elsewhere `PATH` decides, so a Homebrew or npm install is
+  found without configuration.
 
 ## Settings page
 
@@ -329,8 +350,8 @@ MIT — see [LICENSE](LICENSE).
 Bugs and reproductions are the most useful contribution. Read
 [CONTRIBUTING.md](CONTRIBUTING.md) for the local loop and the rules this
 codebase learned the hard way, then pick something from
-[ROADMAP.md](ROADMAP.md) — the Windows-only port and the routing tests are both
-marked `good first issue`.
+[ROADMAP.md](ROADMAP.md) — platform verification, the routing tests and the nine
+unverified CLI drivers are all marked `good first issue`.
 
 Release notes live in [CHANGELOG.md](CHANGELOG.md).
 

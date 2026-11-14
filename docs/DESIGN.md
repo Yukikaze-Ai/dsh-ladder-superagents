@@ -184,6 +184,6 @@ sessions.json     { enabled: [sessionId...] }          # 可选的"按会话启�
 ## 八、明确不建议照抄的部分
 
 - **DSH 特有的接入方式**（Cordis bundle patch、Client 模块加载、审批继承）——宿主没这套就别模仿；
-- **Windows-only 的进程处理**（`.cmd` shim、路径分隔符）——非 Windows 直接跳过；
+- **平台相关的进程处理**（Windows 的 `.cmd` shim 与参数引号、POSIX 的进程组终止、GUI 启动时缺失的 PATH）——按 `process.platform` 分支，不要假设只有一种；
 - **九个未验证的 CLI driver**——只抄 codex 那一个已验证的写法，其余自己按官方文档核实；
 - **"全档都失败后替换成兜底模型"的具体策略**——它依赖你自己对"可用性 vs 成本"的取舍。

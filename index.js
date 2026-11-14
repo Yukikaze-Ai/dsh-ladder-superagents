@@ -24,7 +24,7 @@ import { spawn } from 'node:child_process'
 import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { delimiter, isAbsolute, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 export const name = 'supa'
@@ -77,7 +77,11 @@ const DEFAULTS = {
   tierRetryDelayMs: 1200,
   /** How long a tier stays out of rotation after a failed attempt. */
   failureCooldownMs: 30 * 60 * 1000,
-  /** External CLI tiers: executable override, run limit, result cap. */
+  /**
+   * External CLI tiers: executable override (`~` is expanded), run limit,
+   * result cap. Empty discovers the binary on the augmented PATH and then in
+   * the usual per-user install roots; see `findCodex`.
+   */
   codexCommand: '',
   codexEphemeral: true,
   claudeCommand: '',
@@ -370,7 +374,7 @@ async function ensureUsableRoute(cwd, cfg) {
 }
 
 /** Probe one CLI tier with a single real call, reusing its driver. */
-async function probeCliTier(cfg, tier, cwd) {
+export async function probeCliTier(cfg, tier, cwd) {
   const driver = CLI_DRIVERS[driverOf(tier)]
   if (!driver) return { ok: false, error: `unknown CLI driver "${driverOf(tier)}"` }
   const command = resolveOnPath(tier.command || driver.bin(cfg) || driverOf(tier))
@@ -386,7 +390,7 @@ async function probeCliTier(cfg, tier, cwd) {
     prompt: 'Reply with the single word: ok',
     authority: 'workspace',
   })
-  const shell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)
+  const shell = needsShell(command)
   try {
     const run = await runCodexCli(command, shell ? args.map(quoteForShell) : args, {
       input: driver.prompt === 'stdin' ? 'Reply with the single word: ok' : '',
@@ -420,37 +424,302 @@ async function forgetFailure(cwd, cfg, tier) {
   await writeFailures(cwd, cfg, all)
 }
 
+// ---------------------------------------------------------------- platform layer
+
+const IS_WINDOWS = process.platform === 'win32'
+const IS_MAC = process.platform === 'darwin'
+const IS_LINUX = process.platform === 'linux'
+const PATH_SEPARATOR = IS_WINDOWS ? ';' : delimiter
+
+/** Expand a leading `~` the way a shell would, so a tier's `command` works. */
+function expandHome(value, home = homedir()) {
+  const text = String(value ?? '')
+  if (text === '~') return home
+  if (text.startsWith('~/') || text.startsWith('~\\')) return join(home, text.slice(2))
+  return text
+}
+
+function isExecutableFile(file) {
+  try {
+    const stats = statSync(file)
+    if (!stats.isFile()) return false
+    // Windows has no executable bit: a file name lookup found is runnable.
+    return IS_WINDOWS || (stats.mode & 0o111) !== 0
+  } catch {
+    return false
+  }
+}
+
+/** The newest entry under `parent`, mapped through `pick`, or null. */
+function newestDir(parent, pick) {
+  let candidates
+  try {
+    candidates = readdirSync(parent, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+      .map((entry) => pick(join(parent, entry.name)))
+      .filter((candidate) => existsSync(candidate))
+  } catch {
+    return null
+  }
+  let newest = null
+  let newestAt = -Infinity
+  for (const candidate of candidates) {
+    try {
+      const at = statSync(candidate).mtimeMs
+      if (at >= newestAt) {
+        newest = candidate
+        newestAt = at
+      }
+    } catch {
+      // vanished between readdir and stat
+    }
+  }
+  return newest
+}
+
+/**
+ * The per-user and system bin directories a CLI installer writes to. A Host
+ * started from the Dock on macOS inherits launchd's PATH
+ * (`/usr/bin:/bin:/usr/sbin:/sbin`), so none of these are on PATH unless the
+ * plugin adds them: an npm-installed `claude` would be invisible, and so would
+ * the `node` its `#!/usr/bin/env node` shebang needs.
+ */
+export function wellKnownBinDirs(home = homedir()) {
+  const dirs = []
+  if (IS_WINDOWS) {
+    const appData = process.env.APPDATA || join(home, 'AppData', 'Roaming')
+    const localAppData = process.env.LOCALAPPDATA || join(home, 'AppData', 'Local')
+    dirs.push(
+      join(appData, 'npm'),
+      join(localAppData, 'pnpm'),
+      join(localAppData, 'Microsoft', 'WindowsApps'),
+      join(home, '.bun', 'bin'),
+      join(home, '.cargo', 'bin'),
+      join(home, '.local', 'bin'),
+      join(home, '.volta', 'bin'),
+    )
+    return dirs
+  }
+  dirs.push(
+    // native installers: claude, cursor-agent, aider (pipx), goose, codex
+    join(home, '.local', 'bin'),
+    // opencode's install script
+    join(home, '.opencode', 'bin'),
+    // bun, cargo, volta, and the asdf shims
+    join(home, '.bun', 'bin'),
+    join(home, '.cargo', 'bin'),
+    join(home, '.volta', 'bin'),
+    join(home, '.asdf', 'shims'),
+    // npm globals installed outside the node prefix on PATH
+    join(home, '.npm-global', 'bin'),
+    join(home, '.npm', 'bin'),
+  )
+  if (IS_MAC) {
+    dirs.push(
+      join(home, 'Library', 'pnpm'), // pnpm's own global bin
+      '/opt/homebrew/bin', // Homebrew on Apple Silicon
+      '/opt/homebrew/sbin',
+      '/usr/local/bin', // Homebrew on Intel, native installers
+      '/usr/local/sbin',
+      '/opt/local/bin', // MacPorts
+    )
+  }
+  if (IS_LINUX) {
+    dirs.push(join(home, '.local', 'share', 'pnpm'), '/snap/bin', '/home/linuxbrew/.linuxbrew/bin')
+  }
+  // A node version manager keeps npm globals in its own version directory.
+  const nvm = newestDir(join(home, '.nvm', 'versions', 'node'), (dir) => join(dir, 'bin'))
+  if (nvm) dirs.push(nvm)
+  const fnm = newestDir(join(home, '.fnm', 'node-versions'), (dir) => join(dir, 'installation', 'bin'))
+  if (fnm) dirs.push(fnm)
+  // A GUI-launched Host may also arrive without the basics.
+  dirs.push('/usr/bin', '/bin', '/usr/sbin', '/sbin')
+  return dirs
+}
+
+let binDirsCache = { home: '', at: 0, dirs: [] }
+const BIN_DIRS_TTL_MS = 30 * 1000
+
+/**
+ * PATH plus the install roots above, deduplicated, with the inherited PATH
+ * first: the user's own shim always wins over a fallback location.
+ */
+export function pathDirs() {
+  const home = homedir()
+  if (binDirsCache.home !== home || Date.now() - binDirsCache.at > BIN_DIRS_TTL_MS) {
+    binDirsCache = {
+      home,
+      at: Date.now(),
+      dirs: wellKnownBinDirs(home).filter((dir) => {
+        try {
+          return statSync(dir).isDirectory()
+        } catch {
+          return false
+        }
+      }),
+    }
+  }
+  const seen = new Set()
+  const dirs = []
+  for (const entry of [...String(process.env.PATH ?? '').split(PATH_SEPARATOR), ...binDirsCache.dirs]) {
+    if (!entry) continue
+    const key = IS_WINDOWS ? entry.toLowerCase() : entry
+    if (seen.has(key)) continue
+    seen.add(key)
+    dirs.push(entry)
+  }
+  return dirs
+}
+
+/**
+ * Resolve an executable the way a shell would. An explicit path is taken as
+ * given; a bare name walks PATH (plus the install roots above) with the
+ * platform's extensions. A POSIX file without the executable bit is not a
+ * candidate, because spawn would fail with EACCES instead of trying the next
+ * directory.
+ */
+export function resolveOnPath(name, dirs = null) {
+  if (!name) return null
+  const value = expandHome(name)
+  if (value.includes('/') || value.includes('\\') || /^[A-Za-z]:/.test(value)) {
+    return existsSync(value) ? value : null
+  }
+  const extensions = IS_WINDOWS ? ['.exe', '.cmd', '.bat', ''] : ['']
+  for (const directory of dirs ?? pathDirs()) {
+    if (!directory) continue
+    for (const extension of extensions) {
+      const candidate = join(directory, `${value}${extension}`)
+      if (isExecutableFile(candidate)) return candidate
+    }
+  }
+  return null
+}
+
+/**
+ * Environment for a CLI tier: the augmented PATH (so a shim's
+ * `#!/usr/bin/env node` resolves), and a UTF-8 locale when the Host was started
+ * from the Dock with none, so non-ASCII output is not mangled.
+ */
+export function cliEnv() {
+  const env = { ...process.env, PATH: pathDirs().join(PATH_SEPARATOR) }
+  if (!IS_WINDOWS && !env.LC_ALL && !env.LC_CTYPE && !env.LANG) {
+    env.LANG = IS_MAC ? 'en_US.UTF-8' : 'C.UTF-8'
+  }
+  return env
+}
+
+/**
+ * Start a CLI. On POSIX it leads its own process group, which is what lets
+ * `stopCli` kill the helpers the CLI itself started; Windows keeps one process
+ * and hides the console window.
+ */
+function spawnCli(command, args, options = {}) {
+  return spawn(command, args, {
+    cwd: options.cwd,
+    env: options.env ?? cliEnv(),
+    detached: !IS_WINDOWS,
+    windowsHide: IS_WINDOWS,
+    shell: options.shell === true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+}
+
+/**
+ * Stop a CLI and everything it started: SIGTERM to the whole group, then
+ * SIGKILL after a grace period for a process that ignores the first signal.
+ * `claude -p` or `codex exec` spawning helpers of their own is normal, and a
+ * timed-out tier must not leave them running.
+ */
+function stopCli(child, graceMs = 2000) {
+  if (!child || child.pid === undefined) return
+  const signal = (name) => {
+    try {
+      if (!IS_WINDOWS) {
+        process.kill(-child.pid, name)
+        return
+      }
+      child.kill(name)
+      return
+    } catch {
+      // the group is already gone (ESRCH); fall through to the single child
+    }
+    try {
+      child.kill(name)
+    } catch {
+      // already gone
+    }
+  }
+  signal('SIGTERM')
+  const timer = setTimeout(() => signal('SIGKILL'), graceMs)
+  timer.unref?.()
+  const clear = () => clearTimeout(timer)
+  child.once?.('exit', clear)
+  child.once?.('error', clear)
+}
+
+/** A Windows npm CLI is a `.cmd` shim, which spawn cannot execute directly. */
+function needsShell(command) {
+  return IS_WINDOWS && /\.(cmd|bat)$/i.test(command)
+}
+
 /**
  * Locate the Codex CLI. An external tier runs `codex exec` as a child process
  * instead of a Harness agent session, so its context is the pack on stdin and
  * its result is the CLI's last message.
+ *
+ * Windows: the Codex app install root wins, because that build is the one the
+ * CLI documents for automation and it is not on PATH. Elsewhere: PATH wins,
+ * because that is how Homebrew, nvm, pipx and the vendor installers put
+ * `codex` in front of a user, then the per-user roots.
  */
-function findCodex(cfg) {
-  if (cfg.codexCommand) return cfg.codexCommand
-  const home = homedir()
+export function findCodex(cfg, options = {}) {
+  const home = options.home ?? homedir()
+  if (cfg.codexCommand) return expandHome(cfg.codexCommand, home)
+  const dirs = options.pathDirs
   const candidates = []
-  // Codex keeps one build per directory under its own install root; the newest
-  // build wins. This is the location the Codex CLI documents for automation.
-  const binRoot = join(home, 'AppData', 'Local', 'OpenAI', 'Codex', 'bin')
-  try {
-    const builds = readdirSync(binRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => join(binRoot, entry.name, 'codex.exe'))
-      .filter((candidate) => existsSync(candidate))
-      .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
-    candidates.push(...builds)
-  } catch {
-    // no Codex install root on this machine
+  if (IS_WINDOWS) {
+    // Codex keeps one build per directory under its own install root; the newest
+    // build wins.
+    const binRoot = join(home, 'AppData', 'Local', 'OpenAI', 'Codex', 'bin')
+    try {
+      const builds = readdirSync(binRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => join(binRoot, entry.name, 'codex.exe'))
+        .filter((candidate) => existsSync(candidate))
+        .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+      candidates.push(...builds)
+    } catch {
+      // no Codex install root on this machine
+    }
+    candidates.push(
+      join(home, '.codex', 'plugins', '.plugin-appserver', 'codex.exe'),
+      join(home, '.cargo', 'bin', 'codex.exe'),
+      join(home, '.local', 'bin', 'codex'),
+    )
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate
+    }
+    return resolveOnPath('codex', dirs) ?? 'codex'
   }
+  const fromPath = resolveOnPath('codex', dirs)
+  if (fromPath) return fromPath
+  // PATH is the normal route (it already carries Homebrew, MacPorts and the
+  // node managers); these are the per-user roots a CLI install script uses.
   candidates.push(
-    join(home, '.codex', 'plugins', '.plugin-appserver', 'codex.exe'),
-    join(home, '.cargo', 'bin', 'codex.exe'),
+    join(home, '.codex', 'bin', 'codex'),
     join(home, '.local', 'bin', 'codex'),
+    join(home, '.cargo', 'bin', 'codex'),
   )
   for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate
+    if (isExecutableFile(candidate)) return candidate
   }
   return 'codex'
+}
+
+/** The absolute path to run, or null when the CLI is not installed at all. */
+function codexExecutable(cfg) {
+  const found = findCodex(cfg)
+  return resolveOnPath(found) ?? (existsSync(found) ? found : null)
 }
 
 /**
@@ -802,8 +1071,8 @@ function renderTier(tier, index) {
  * because a hidden model can still be pinnable and a SupA tier may name it.
  */
 async function scanCodexModels(cfg, cwd) {
-  const codex = findCodex(cfg)
-  if (!existsSync(codex)) throw new Error(`codex CLI not found at ${codex}; set codexCommand or install Codex`)
+  const codex = codexExecutable(cfg)
+  if (!codex) throw new Error('codex CLI not found; set an absolute path in `codexCommand` or install Codex')
   const result = await runCodexCli(codex, ['debug', 'models'], { timeoutMs: 60000 })
   if (result.code !== 0) throw new Error(`codex debug models exited ${result.code}: ${result.stderr.trim().slice(-300)}`)
 
@@ -837,8 +1106,8 @@ async function scanCodexModels(cfg, cwd) {
  * caller forces a retest. Every call consumes that model's tokens/usage.
  */
 async function pinCodexTargets(cfg, cwd, targets, options = {}) {
-  const codex = findCodex(cfg)
-  if (!existsSync(codex)) throw new Error(`codex CLI not found at ${codex}; set codexCommand or install Codex`)
+  const codex = codexExecutable(cfg)
+  if (!codex) throw new Error('codex CLI not found; set an absolute path in `codexCommand` or install Codex')
 
   const cacheFile = join(stateDirOf(), 'codex-models.json')
   let cache = { at: 0, models: [], probes: {} }
@@ -891,36 +1160,19 @@ async function pinCodexTargets(cfg, cwd, targets, options = {}) {
 }
 
 /**
- * Resolve an executable the way a shell would: an explicit path is checked
- * directly, a bare name is looked up on PATH with the platform's extensions.
- */
-/**
  * Quote one argument for a CLI started through a shell. Windows .cmd/.bat
  * wrappers need this: an unquoted `&` in a prompt ends the command and starts
- * another one.
+ * another one. A POSIX CLI is spawned directly, never through a shell, so the
+ * POSIX branch exists only for a caller that asks for one.
  */
-function quoteForShell(arg) {
+export function quoteForShell(arg) {
   const value = String(arg)
-  if (process.platform !== 'win32') return `'${value.replace(/'/g, `'\\''`)}'`
+  if (!IS_WINDOWS) return `'${value.replace(/'/g, `'\\''`)}'`
   if (value === '') return '""'
   if (!/[\s"&|<>^()]/.test(value)) return value
   // shortcut: cmd still expands %NAME% inside quotes; a prompt that names an
   // environment variable in percent signs is rare enough to leave alone.
   return `"${value.replace(/"/g, '\\"')}"`
-}
-
-function resolveOnPath(name) {  if (!name) return null
-  if (name.includes('/') || name.includes('\\') || /^[A-Za-z]:/.test(name)) return existsSync(name) ? name : null
-  const extensions = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : ['']
-  const separator = process.platform === 'win32' ? ';' : ':'
-  for (const directory of String(process.env.PATH ?? '').split(separator)) {
-    if (!directory) continue
-    for (const extension of extensions) {
-      const candidate = join(directory, `${name}${extension}`)
-      if (existsSync(candidate)) return candidate
-    }
-  }
-  return null
 }
 
 /**
@@ -1048,18 +1300,14 @@ function cliCommandFor(tier, cfg) {
 }
 
 /** Run one CLI to completion, capture both streams, and honour a deadline. */
-function runCodexCli(exe, args, options = {}) {
+export function runCodexCli(exe, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(exe, args, { cwd: options.cwd, windowsHide: true, shell: options.shell === true, stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawnCli(exe, args, { cwd: options.cwd, shell: options.shell === true })
     let stdout = ''
     let stderr = ''
     let settled = false
     const timer = setTimeout(() => {
-      try {
-        child.kill()
-      } catch {
-        // already gone
-      }
+      stopCli(child)
       finish(reject, new Error(`timed out after ${options.timeoutMs ?? 60000}ms`))
     }, options.timeoutMs ?? 60000)
     function finish(fn, value) {
@@ -1193,6 +1441,48 @@ function transcriptLines(session, count, perMessage) {
 
 function textBlocks(text) {
   return [{ type: 'text', text }]
+}
+
+// ------------------------------------------------- shell hand-off classification
+
+/**
+ * A statement is split the way a shell would run one: `;`, a newline, `&&` or
+ * `||`. The classifier looks at the start of each statement, never inside a
+ * quoted argument.
+ */
+const SLEEP_PATTERN = /\b(?:sleep\s+(\d+(?:\.\d+)?)|Start-Sleep\s+(?:-Seconds\s+)?(\d+(?:\.\d+)?)|timeout\s+\/t\s+(\d+))\b/gi
+const POLL_LOOP = /\b(?:while|until|for)\b[\s\S]{0,200}?\b(?:sleep|Start-Sleep)\b/i
+// Commands that almost never finish inside a turn. The build and install tools
+// of each platform are listed, so `brew install` is as long as `npm install`.
+const LONG_COMMAND = /^(?:(?:npm|pnpm|yarn|bun)\s+(?:install|i|add|run|test|build|publish)|(?:pip|uv|poetry)\s+(?:install|add|sync)|(?:cargo|dotnet|msbuild|gradle|mvn)\s+(?:build|test|run|publish|restore)|(?:go|make|cmake)\s+(?:build|test|install|all)|(?:brew|port)\s+(?:install|upgrade|reinstall)|xcodebuild|pod\s+install|swift\s+(?:build|test)|pytest|tox|jest|vitest|playwright|cypress|docker\s|git\s+clone)\b/i
+const statementsOf = (command) => String(command)
+  .split(/[;\n]|&&|\|\|/)
+  .map((part) => part.trim())
+  .filter(Boolean)
+// A long command usually hides behind a wrapper: `cmd /c npm install`,
+// `pwsh -c npm test`, `Start-Process npm`. Look through it.
+const unwrapStatement = (part) => part
+  .replace(/^(?:cmd(?:\.exe)?\s+\/[ck]\s+|powershell(?:\.exe)?\s+-c(?:ommand)?\s+|pwsh(?:\.exe)?\s+-c(?:ommand)?\s+|Start-Process\s+)/i, '')
+  .replace(/^["']|["']$/g, '')
+
+/** True when a command is one that almost never finishes inside one turn. */
+export function looksLong(command) {
+  return statementsOf(command)
+    .some((part) => LONG_COMMAND.test(part) || LONG_COMMAND.test(unwrapStatement(part)))
+}
+
+/** The plain sleep seconds a command asks for, summed over its statements. */
+export function sleepSecondsOf(command) {
+  let total = 0
+  for (const match of String(command).matchAll(SLEEP_PATTERN)) {
+    total += Number(match[1] ?? match[2] ?? match[3] ?? 0) || 0
+  }
+  return total
+}
+
+/** True when a command waits inside a loop instead of ending. */
+export function pollsInLoop(command) {
+  return POLL_LOOP.test(String(command))
 }
 
 export function apply(ctx, config) {
@@ -1504,23 +1794,6 @@ export function apply(ctx, config) {
     return 'spawned'
   }
 
-  const SLEEP_PATTERN = /\b(?:sleep\s+(\d+(?:\.\d+)?)|Start-Sleep\s+(?:-Seconds\s+)?(\d+(?:\.\d+)?)|timeout\s+\/t\s+(\d+))\b/gi
-  const POLL_LOOP = /\b(?:while|until|for)\b[\s\S]{0,200}?\b(?:sleep|Start-Sleep)\b/i
-  // Commands that almost never finish inside a turn. Anchored at the start of a
-  // statement, so the words inside a quoted argument (`git commit -m "npm test"`)
-  // do not count.
-  const LONG_COMMAND = /^(?:(?:npm|pnpm|yarn|bun)\s+(?:install|i|add|run|test|build|publish)|(?:pip|uv|poetry)\s+(?:install|add|sync)|(?:cargo|dotnet|msbuild|gradle|mvn)\s+(?:build|test|run|publish|restore)|(?:go|make|cmake)\s+(?:build|test|install|all)|pytest|tox|jest|vitest|playwright|cypress|docker\s|git\s+clone)\b/i
-  const statementsOf = (command) => command
-    .split(/[;\n]|&&|\|\|/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-  // A long command usually hides behind a wrapper: `cmd /c npm install`,
-  // `pwsh -c npm test`, `Start-Process npm`. Look through it.
-  const unwrapStatement = (part) => part
-    .replace(/^(?:cmd(?:\.exe)?\s+\/[ck]\s+|powershell(?:\.exe)?\s+-c(?:ommand)?\s+|pwsh(?:\.exe)?\s+-c(?:ommand)?\s+|Start-Process\s+)/i, '')
-    .replace(/^["']|["']$/g, '')
-  const looksLong = (command) => statementsOf(command)
-    .some((part) => LONG_COMMAND.test(part) || LONG_COMMAND.test(unwrapStatement(part)))
   ctx.effect(() => ctx.tools.guard((execution) => {
     if (!execution || !isSupa(execution.agent)) return undefined
     if (execution.name !== 'pwsh' && execution.name !== 'bash') return undefined
@@ -1533,11 +1806,8 @@ export function apply(ctx, config) {
     const command = String(args.command ?? '')
     if (!command) return undefined
 
-    let total = 0
-    for (const match of command.matchAll(SLEEP_PATTERN)) {
-      total += Number(match[1] ?? match[2] ?? match[3] ?? 0) || 0
-    }
-    const looping = POLL_LOOP.test(command)
+    const total = sleepSecondsOf(command)
+    const looping = pollsInLoop(command)
 
     let what = ''
     if (total >= 30 || looping) {
@@ -2030,7 +2300,10 @@ export function apply(ctx, config) {
           const failed = failureActive(failures[tier.id], cfg) ? failures[tier.id] : null
           return `${renderTier(tier, index)}${availability[index] ? '' : ' · UNAVAILABLE'}${failed ? ` · COOLING DOWN: ${leadingLine(failed.error, 80)}` : ''}`
         })
-        if (ladder.tiers.some((tier) => tier.kind === 'codex')) lines.push(`codex binary: ${findCodex(cfg)}`)
+        const cliTiers = ladder.tiers.filter((tier) => isCliTier(tier) && driverOf(tier) === 'codex')
+        if (cliTiers.length > 0) {
+          lines.push(`codex binary: ${codexExecutable(cfg) ?? 'not found (set an absolute path in `codexCommand` or install Codex)'}`)
+        }
         try {
           const cached = JSON.parse(readFileSync(join(stateDirOf(), 'codex-models.json'), 'utf8'))
           const age = Math.max(0, Math.round((Date.now() - cached.at) / 60000))
@@ -3256,24 +3529,17 @@ export function apply(ctx, config) {
           authority,
         })
 
-        // A Windows npm shim is a .cmd, which spawn cannot execute directly.
-        const shell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)
-        const child = spawn(command, shell ? args.map(quoteForShell) : args, {
-          cwd,
-          windowsHide: true,
-          shell,
-          stdio: ['pipe', 'pipe', 'pipe'],
-        })
+        // A Windows npm shim is a .cmd, which spawn cannot execute directly;
+        // everywhere else the binary is executed as-is, with its own shebang.
+        const shell = needsShell(command)
+        const child = spawnCli(command, shell ? args.map(quoteForShell) : args, { cwd, shell })
         let stdout = ''
         let stderr = ''
         child.stdout.on('data', (chunk) => { stdout = `${stdout}${chunk}`.slice(-4000) })
         child.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-2000) })
         const timer = setTimeout(() => {
-          try {
-            child.kill()
-          } catch {
-            // already gone
-          }
+          // The CLI may have started helpers of its own; stop the group.
+          stopCli(child)
         }, cfg.cliTimeoutMs)
         child.stdin.on('error', () => {})
         child.stdin.end(driver.prompt === 'stdin' ? pack : '')

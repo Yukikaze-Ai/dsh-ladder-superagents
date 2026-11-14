@@ -10,18 +10,22 @@
 > “Cannot read properties of undefined” 拒绝每一次派活。
 > `package.json` 的 `engines.dsh` 已声明，插件管理器不会在低版本上安装它。
 >
-> **Windows 是已验证的平台。** 十个 CLI 驱动都是在 Windows 上开发和实跑的：
-> `.cmd`/`.bat` 走 shell、PATH 查找带 Windows 扩展名、参数引用也区分平台。
-> 代码里这三处都按 `process.platform` 分支，所以 macOS 和 Linux 上 llm 层级
-> 可用，原生 CLI 二进制（codex、claude 等）理论上也能用——但那条路径**还没
-> 验证过**。`os` 限制已经移除，任何平台都能安装；在有人报告成功之前，
-> 非 Windows 的 CLI 层级请当作实验性。
+> **Windows 与 macOS。** 阶梯、路由、设置页和 llm 层级都与平台无关。CLI 层级按
+> `process.platform` 分支：Windows 上 `.cmd`/`.bat` shim 走 shell，带 Windows
+> 引号和 PATH 扩展名；macOS 和 Linux 上直接执行二进制，所以 npm shim 的
+> `#!/usr/bin/env node` shebang 能解析到。启动器还会补上从 Dock 启动的宿主
+> 拿不到的安装目录（`/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin`、
+> `~/.opencode/bin`、`~/.cargo/bin`、nvm/fnm/volta/asdf 的 bin、`~/Library/pnpm`），
+> 并在超时时杀掉 CLI 的整个进程组。启动器已在 macOS 上用假 CLI 在 `npm test`
+> 里验证（发现、stdin、参数提示、超时终止）；那台 Mac 没有装 Codex，
+> 所以 **codex 本身仍只在 Windows 上验证过**，Linux 走同一条 POSIX 路径但未验证。
 >
 > 十个 CLI 驱动中只有 **codex** 经过验证。kimi、claude、gemini、
 > qwen、cursor、opencode、aider、copilot 和 goose 都是按各自 CLI 的
 > 官方文档调用方式实现的，但从未针对一个可用的账号实际运行过 ——
 > 尤其是 claude 需要付费的 Claude 订阅，而 kimi 需要 Kimi 账号。
-> 这九个都应当视为实验性。
+> 这九个都应当视为实验性。它们下面的启动器已在 macOS 上用假 CLI 验证过，
+> 还缺的只是一个真实账号。
 >
 > 审批行为是**继承来的**：插件本身不回答任何审批请求。
 > `autoApprove: true` 是显式选择加入，而不是默认值。
@@ -98,7 +102,7 @@
 | `maxRouteRetries` | `2` | 降级这么多次之后停止 |
 | `tierAttempts` | `2` | 在同一层级上的尝试次数，之后它被标记并释放其槽位 |
 | `tierRetryDelayMs` | `1200` | 重试同一层级前的暂停 |
-| `codexCommand` | `''` | codex CLI 的绝对路径；空值会依次发现 `~/.codex/plugins/*/codex.exe` 和 `~/.cargo/bin/codex.exe` |
+| `codexCommand` | `''` | codex CLI 的绝对路径；空值会在补全后的 PATH 上找 `codex`，再找 `~/.codex/bin`、`~/.local/bin`、`~/.cargo/bin`（Windows 先看 Codex 应用安装根目录） |
 | `cliTimeoutMs` | `900000` | 在这段时间之后杀掉一次 codex 运行 |
 | `maxCliResultChars` | `8000` | 回队给父会话的结果的长度上限 |
 | `maxPackBytes` | `24000` | 上下文包上限 |
@@ -240,21 +244,34 @@ SupA 给任务打 1-10 分；`supa_spawn` 带上 `difficulty: 7` 就会选出对
 | `copilot` | `copilot` | `copilot -p "<prompt>"` | 参数 |
 | `goose` | `goose` | `goose run -t "<prompt>"` | 参数 |
 
-在这台机器上实际跑过：`codex`、`kimi`。其余的是文档中的调用方式，并未在
-这里运行过 —— 错误的参数会大声失败，并且可以用该层级的 `command` 字段修好。
+在构建这个插件的 Windows 机器上实际跑过：`codex`、`kimi`。其余的是文档中的
+调用方式，并未针对账号运行过 —— 错误的参数会大声失败，并且可以用该层级的
+`command` 字段修好。
 
-### Windows 与 macOS
+### 平台差异
 
 - 在 Windows 上通过 npm 安装的 CLI 是一个 `.cmd` shim，`spawn` 无法直接
   执行它。启动器会检测 `.cmd`/`.bat`，并带参数引号地通过 shell 运行。
+  macOS 和 Linux 上则直接执行二进制，`#!/usr/bin/env node` 这类 shim 能解析到。
 - 可执行文件的查找在 Windows 上会沿 `PATH` 尝试 `.exe`/`.cmd`/`.bat`，
-  在其他平台上则用裸名字；层级里显式的 `command` 永远优先。
+  在其他平台上则用裸名字；此外还会补上从 Dock 启动的宿主拿不到的安装目录：
+  `/opt/homebrew/bin`、`/usr/local/bin`（Homebrew）、`/opt/local/bin`
+  （MacPorts）、`~/.local/bin`、`~/.opencode/bin`、`~/.cargo/bin`、
+  `~/.bun/bin`、`~/.volta/bin`、asdf 的 shim、最新的 nvm/fnm node bin，
+  以及 `~/Library/pnpm`。继承来的 `PATH` 永远排在最前，层级里显式的
+  `command` 永远优先，其中的 `~` 会被展开。
+- 在 POSIX 上，`PATH` 里找到的名字必须带可执行位，和 shell 的解析一致；
+  到处都找不到时直接报 `… CLI not found`，而不是在后面收到 `EACCES`。
+- 宿主从 Dock 启动时通常没有任何 locale（`LANG`/`LC_ALL`/`LC_CTYPE` 全未设置），
+  这时子进程会拿到一个 UTF-8 locale，非 ASCII 输出不会变成乱码。
+- 达到 `cliTimeoutMs` 时，向整个进程组发 SIGTERM，两秒后再发 SIGKILL；
+  CLI 自己起的帮手进程（`codex exec`、`claude -p`）不会留在后台。
 - 在 Windows 上优先用 stdin 驱动：命令行长度被限制在约 32k 字符，
-  所以把 24 KB 的上下文包作为参数传过去是有风险的。参数驱动对简短的任务
-  简令没有问题。
+  所以把 24 KB 的上下文包作为参数传过去是有风险的。macOS 的上限约 1 MB，
+  参数驱动在那里是安全的。
 - 配置主目录不同（`%USERPROFILE%\.codex` 与 `~/.codex`，`%APPDATA%` 与
-  `~/.config`），这就是为什么 codex 二进制是从它的安装根目录发现的，
-  而不是假定它在 `PATH` 上。
+  `~/.config`）。Windows 上会先看 Codex 应用的安装根目录；其他平台由 `PATH`
+  决定，Homebrew 或 npm 装的 codex 不需要配置就能找到。
 
 ## 设置页面
 
@@ -308,8 +325,8 @@ MIT —— 见 [LICENSE](LICENSE)。
 
 Bug 和复现是最有用的贡献。阅读
 [CONTRIBUTING.md](CONTRIBUTING.md) 了解本地循环以及这个代码库踩坑学到的
-规则，然后从 [ROADMAP.md](ROADMAP.md) 里挑一件事 —— 仅 Windows 的移植和
-路由测试都标记为 `good first issue`。
+规则，然后从 [ROADMAP.md](ROADMAP.md) 里挑一件事 —— 平台验证、路由测试和
+九个未验证的 CLI 驱动都标记为 `good first issue`。
 
 发布说明位于 [CHANGELOG.md](CHANGELOG.md)。
 

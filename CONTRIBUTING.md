@@ -75,19 +75,29 @@ Follow these or the bug comes back:
    else is an explicit opt-in.
 6. **Shell arguments go through `quoteForShell`.** On Windows the CLI drivers run
    as `.cmd`/`.bat` through a shell; an unquoted `&` in a prompt starts a second
-   command.
-7. **New `supa_*` tools are gated for free.** In `mode: 'session'` the guard
+   command. A POSIX CLI is spawned directly and never quoted, so do not "fix" the
+   POSIX branch into a shell invocation.
+7. **Platform-dependent process code lives in the platform layer**, not at the
+   call site: `pathDirs`, `resolveOnPath`, `cliEnv`, `findCodex`, `spawnCli` and
+   `stopCli`. A new CLI driver only names its binary and its arguments; if it
+   needs a different launch rule, add the rule there so macOS, Linux and Windows
+   stay in one place.
+8. **New `supa_*` tools are gated for free.** In `mode: 'session'` the guard
    rejects every `supa_`-prefixed tool when the session is not enabled. If you
    add a tool that must work in a disabled session, add it to the exemption next
    to `supa_session`.
-8. **Show costs in a dialog, not in a hover title.** Pinning spends tokens; the
+9. **Show costs in a dialog, not in a hover title.** Pinning spends tokens; the
    user must confirm it.
 
 ## Test it by hand
 
-There is a small test suite for the pure logic: `npm test` runs `node --test` with no
-dependencies and covers the routing decision (`test/routing.test.js`). What still
-needs a hand:
+`npm test` runs `node --test` with no dependencies. It covers the routing
+decisions (`test/routing.test.js`), reuse, accounting and statistics, and the
+launcher itself (`test/platform.test.js`): PATH augmentation, executable-bit
+lookup, a tier `command` with `~`, stdin and argument prompts, the UTF-8 locale
+and the timeout's process-group kill, all driven through a fixture CLI so no
+account is needed; plus the shell hand-off classifier. The Windows `.cmd` cases
+skip elsewhere and vice versa. What still needs a hand:
 
 - **Normal path**: open Settings → `dsh-ladder-superagents`, add a tier, drag it,
   disable it, remove it.
