@@ -771,13 +771,19 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         let alive = true
         let timer = null
+        const schedule = (delay) => {
+          if (alive) timer = setTimeout(load, delay)
+        }
         const load = () => {
           request('/supa/state').then((next) => {
-            if (alive) setState(next)
+            if (!alive) return
+            setState(next)
+            // The count in the pill is live data: refresh it quietly.
+            schedule(20000)
           }).catch(() => {
             // The host half may still be starting; retry instead of staying
             // invisible for the rest of the page's life.
-            if (alive) timer = setTimeout(load, 3000)
+            schedule(3000)
           })
         }
         load()
@@ -821,6 +827,8 @@ window.__ModuleLoader__.load({
         ? true
         : (state.supaSessions ?? []).some((id) => String(id) === sessionId)
       const locked = mode !== 'session'
+      // Workers this session has running: the pill shows activity, not only on/off.
+      const running = Number(state.running?.[sessionId] ?? 0) || 0
 
       const toggle = async () => {
         if (locked || busy) return
@@ -872,7 +880,7 @@ window.__ModuleLoader__.load({
           background: enabled ? 'var(--dsw-alias-state-success-primary, #2f855a)' : 'var(--dsw-alias-state-idle-primary, #9aa0aa)',
         },
       }),
-      'SupA')
+      running > 0 ? `SupA · ${running}` : 'SupA')
     }
 
     // Two whole languages: Chinese when the app runs in Chinese or the user

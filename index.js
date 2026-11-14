@@ -1207,18 +1207,58 @@ export function apply(ctx, config) {
     }
   }
 
+  /**
+   * The Session behind an Agent. The public Agent contract only promises `id`,
+   * but the runtime object carries `session`; read it through here so a
+   * narrower agent shape degrades instead of throwing on every tool call.
+   */
+  /**
+   * The live direct children of a session. `listChildren` is gone from the
+   * current subagent service; descendants carry depth and parent, so filter to
+   * the first level.
+   */
+  const directChildren = async (agent) => {
+    const subagents = ctx.get?.('subagents')
+    const rootId = sessionOf(agent).id
+    if (!subagents?.listDescendants || !rootId) return []
+    try {
+      const rows = await subagents.listDescendants(rootId)
+      return rows.filter((row) => row.kind === 'child'
+        && (row.depth === 1 || String(row.parentId ?? '') === String(rootId)))
+    } catch {
+      return []
+    }
+  }
+
+  const sessionOf = (agent) => {
+    const attached = agent?.session
+    if (attached?.id) return attached
+    const id = agent?.id ? String(agent.id) : ''
+    const live = id ? ctx.get?.('agents')?.get?.(id) : undefined
+    if (live?.session?.id) return live.session
+    // Without a session we cannot read the header, so ask the tree instead:
+    // a member with a creator is a child and must not be treated as a root.
+    let hasParent = false
+    try {
+      hasParent = Boolean(ctx.get?.('subagents')?.namesOf?.(agent)?.parent)
+    } catch {
+      hasParent = false
+    }
+    return { id, header: hasParent ? { parentSession: 'unknown' } : {} }
+  }
+
   const isSupa = (agent) => {
     if (!agent) return false
-    if (cfg.mode === 'root') return !agent.session?.header?.parentSession
+    if (cfg.mode === 'root') return !sessionOf(agent)?.header?.parentSession
     if (cfg.mode === 'session') {
-      const id = agent.session?.id ? String(agent.session.id) : ''
-      const parent = agent.session?.header?.parentSession
+      const id = sessionOf(agent)?.id ? String(sessionOf(agent).id) : ''
+      const parent = sessionOf(agent)?.header?.parentSession
       const enabled = readEnabledSessions()
       if (id && enabled.includes(id)) return true
       return Boolean(parent) && enabled.includes(String(parent))
     }
     if (cfg.mode === 'preset') {
-      const preset = agent.session?.header?.agentPreset
+      const preset = sessionOf(agent)?.header?.agentPreset
       return Array.isArray(cfg.presets) && cfg.presets.includes(preset)
     }
     return true
@@ -1376,7 +1416,7 @@ export function apply(ctx, config) {
     // A model that retries a denied command must not spawn a second child for
     // the same work: the first one is still running. Whitespace differences are
     // the same command.
-    const key = `${String(agent.session?.id ?? '')}\u0000${command.replace(/\s+/g, ' ').trim()}`
+    const key = `${String(sessionOf(agent)?.id ?? '')}\u0000${command.replace(/\s+/g, ' ').trim()}`
     const at = handedOff.get(key)
     if (at && Date.now() - at < HAND_OFF_DEDUPE_MS) return 'duplicate'
     handedOff.set(key, Date.now())
@@ -1387,7 +1427,7 @@ export function apply(ctx, config) {
     }
 
     // A flat fan-out is bounded by width, not depth.
-    if (runningChildrenOf(agent.session?.id) >= cfg.maxChildren) return 'full'
+    if (runningChildrenOf(sessionOf(agent)?.id) >= cfg.maxChildren) return 'full'
 
     const brief = [
       '## Assignment',
@@ -1421,7 +1461,7 @@ export function apply(ctx, config) {
       // that only ever handed commands off look empty.
       recordUsage({
         kind: 'start',
-        session: String(agent.session?.id ?? ''),
+        session: String(sessionOf(agent)?.id ?? ''),
         child: String(activation?.childId ?? ''),
         task: summary.slice(0, 80),
         tier: '',
@@ -1433,7 +1473,7 @@ export function apply(ctx, config) {
       // model believing a child is working on it.
       handedOff.delete(key)
       try {
-        const inbox = inboxFileFor(agent.session)
+        const inbox = inboxFileFor(sessionOf(agent))
         const record = {
           id: newRecordId(),
           at: nowIso(),
@@ -1537,7 +1577,7 @@ export function apply(ctx, config) {
       const args = execution.arguments ?? {}
       recordUsage({
         kind: 'start',
-        session: String(agent.session?.id ?? ''),
+        session: String(sessionOf(agent)?.id ?? ''),
         task: String(args.description ?? args.label ?? '').slice(0, 80),
         tier: '',
         slot: null,
@@ -1609,7 +1649,7 @@ export function apply(ctx, config) {
     async execute(args, exec) {
       const agent = exec.agent
       if (!agent) throw new Error('supa_session requires a calling agent')
-      const id = agent.session?.id ? String(agent.session.id) : ''
+      const id = sessionOf(agent)?.id ? String(sessionOf(agent).id) : ''
       if (!id) throw new Error('this session has no id')
       let enabled = readEnabledSessions()
       if (args.action === 'enable') {
@@ -1634,7 +1674,7 @@ export function apply(ctx, config) {
             return 0
           }
         })()
-        const queued = pendingReportsOf(inboxFileFor(agent.session)).length
+        const queued = pendingReportsOf(inboxFileFor(sessionOf(agent))).length
         value.stillRunning = running
         value.note = [
           running > 0 ? `${running} child session(s) keep running; their results stay queued` : 'no child is running',
@@ -1717,9 +1757,9 @@ export function apply(ctx, config) {
 
   const grantFor = (agent) => {
     if (!agent) return cfg.authority
-    const known = grants.get(String(agent.session?.id))
+    const known = grants.get(String(sessionOf(agent)?.id))
     if (known) return known
-    const parentId = agent.session?.header?.parentSession
+    const parentId = sessionOf(agent)?.header?.parentSession
     if (parentId) return grants.get(String(parentId)) ?? cfg.authority
     return cfg.authority
   }
@@ -1743,7 +1783,7 @@ export function apply(ctx, config) {
     ctx.on('approval/request', async (request, next) => {
       const agent = request?.agent
       if (!agent || !isSupa(agent)) return next()
-      const session = agent.session
+      const session = sessionOf(agent)
       const cwd = sessionCwd(ctx, session)
       const file = ledgerFileOf(cwd, cfg)
       const level = requestLevel(request)
@@ -1833,7 +1873,7 @@ export function apply(ctx, config) {
     text: (context) => {
       const agent = context?.agent
       if (!agent || !isSupa(agent)) return ''
-      const session = agent.session
+      const session = sessionOf(agent)
       const cwd = sessionCwd(ctx, session)
       const file = ledgerFileOf(cwd, cfg)
       const lines = []
@@ -1979,7 +2019,7 @@ export function apply(ctx, config) {
     async execute(args, exec) {
       const agent = exec.agent
       if (!agent) throw new Error('supa_models requires a calling agent')
-      const cwd = sessionCwd(ctx, agent.session)
+      const cwd = sessionCwd(ctx, sessionOf(agent))
       const file = modelsFileOf(cwd, cfg)
 
       if (args.action === 'list') {
@@ -2238,6 +2278,24 @@ export function apply(ctx, config) {
   // anyway, and the app's own bridge does not present an owner principal, so a
   // stricter check only breaks the settings page.
 
+  const runningBySession = async () => {
+    const out = {}
+    const subagents = ctx.get?.('subagents')
+    if (!subagents?.listDescendants) return out
+    for (const id of readEnabledSessions()) {
+      try {
+        const rows = await subagents.listDescendants(id)
+        const count = rows.filter((row) => row.kind === 'child'
+          && (row.depth === 1)
+          && row.activity === 'running').length
+        if (count > 0) out[String(id)] = count
+      } catch {
+        // a session that cannot be read simply reports no activity
+      }
+    }
+    return out
+  }
+
   const settingsState = async (requested) => {
     const cwd = apiCwd(requested)
     const file = modelsFileOf(cwd, cfg)
@@ -2289,6 +2347,9 @@ export function apply(ctx, config) {
           at: Number(entry.at) || 0,
         })),
       supaSessions: readEnabledSessions(),
+      // How many workers each enabled session has running, so the header pill
+      // can show activity instead of only on/off.
+      running: await runningBySession(),
       ladderReady: ladder.tiers.some((tier) => tier.slot === 1 && tier.enabled !== false),
     }
   }
@@ -2593,7 +2654,7 @@ export function apply(ctx, config) {
     async execute(args, exec) {
       const agent = exec.agent
       if (!agent) throw new Error('supa_context requires a calling agent')
-      const session = agent.session
+      const session = sessionOf(agent)
       const cwd = sessionCwd(ctx, session)
       const file = ledgerFileOf(cwd, cfg)
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50)
@@ -2694,12 +2755,12 @@ export function apply(ctx, config) {
     async execute(args, exec) {
       const agent = exec.agent
       if (!agent) throw new Error('supa_report requires a calling agent')
-      const parentId = agent.session?.header?.parentSession
+      const parentId = sessionOf(agent)?.header?.parentSession
       if (!parentId) throw new Error('this session is a root SupA; it has no inbound queue to report to')
       const subagents = ctx.get?.('subagents')
       const parents = ctx.get?.('agents')
       const parent = parents?.get?.(parentId)
-      const session = agent.session
+      const session = sessionOf(agent)
       const parentSession = parent?.session
       const file = parentSession
         ? inboxFileFor(parentSession)
@@ -2786,7 +2847,7 @@ export function apply(ctx, config) {
     async execute(args, exec) {
       const agent = exec.agent
       if (!agent) throw new Error('supa_inbox requires a calling agent')
-      const session = agent.session
+      const session = sessionOf(agent)
       const file = inboxFileFor(session)
       const pending = pendingReportsOf(file)
       const lanes = lanesOf(pending)
@@ -2932,7 +2993,7 @@ export function apply(ctx, config) {
       const subagents = ctx.get?.('subagents')
       if (!subagents) throw new Error('the subagents service is unavailable; supa_spawn cannot start a child')
 
-      const session = agent.session
+      const session = sessionOf(agent)
       const cwd = sessionCwd(ctx, session)
       const file = ledgerFileOf(cwd, cfg)
 
@@ -3111,7 +3172,7 @@ export function apply(ctx, config) {
 
       const enqueueParentNote = (text, kind = 'retry') => {
         try {
-          const inbox = inboxFileFor(agent.session)
+          const inbox = inboxFileFor(sessionOf(agent))
           const lane = kind === 'retry' ? 'router' : 'cli'
           const record = { id: newRecordId(), at: nowIso(), lane, from: '', kind, text }
           mkdir(join(inbox, '..'), { recursive: true })
@@ -3405,7 +3466,7 @@ export function apply(ctx, config) {
       if (!agent) throw new Error('supa_context_request requires a calling agent')
       const subagents = ctx.get?.('subagents')
       if (!subagents) throw new Error('the subagents service is unavailable')
-      const parentId = agent.session?.header?.parentSession
+      const parentId = sessionOf(agent)?.header?.parentSession
       if (!parentId) throw new Error('this session has no parent SupA; you own your context')
 
       const text = [
@@ -3473,16 +3534,16 @@ export function apply(ctx, config) {
       const agent = exec.agent
       if (!agent) throw new Error('supa_authority requires a calling agent')
       const child = String(args.agent_id)
-      const kids = await ctx.get?.('subagents')?.listChildren?.(agent.session.id)
-      if (!Array.isArray(kids) || !kids.some((entry) => String(entry.id) === child)) {
+      const kids = await directChildren(agent)
+      if (!kids.some((entry) => String(entry.id) === child)) {
         throw new Error(`${shortId(child)} is not a direct child of this session`)
       }
       const parentGrant = grantFor(agent)
       const wanted = args.level === 'full' ? 'full' : 'workspace'
       const effective = wanted === 'full' && parentGrant !== 'full' ? 'workspace' : wanted
       grants.set(child, effective)
-      const file = ledgerFileOf(sessionCwd(ctx, agent.session), cfg)
-      await recordPermission(file, agent.session.id, 'decision', `Authored ${effective} authority for ${shortId(child)} (holds ${parentGrant}).`)
+      const file = ledgerFileOf(sessionCwd(ctx, sessionOf(agent)), cfg)
+      await recordPermission(file, sessionOf(agent).id, 'decision', `Authored ${effective} authority for ${shortId(child)} (holds ${parentGrant}).`)
       if (effective !== wanted) {
         return `authority for ${shortId(child)} set to ${effective}: you hold ${parentGrant}, so "full" must be requested from the human.`
       }
@@ -3516,14 +3577,14 @@ export function apply(ctx, config) {
     async execute(_args, exec) {
       const agent = exec.agent
       if (!agent) throw new Error('supa_status requires a calling agent')
-      const session = agent.session
+      const session = sessionOf(agent)
       const cwd = sessionCwd(ctx, session)
       const file = ledgerFileOf(cwd, cfg)
       const records = await readLedger(file)
       let children = 'unavailable'
       try {
-        const list = await ctx.get?.('subagents')?.listChildren?.(session.id)
-        children = Array.isArray(list) && list.length > 0
+        const list = await directChildren(agent)
+        children = list.length > 0
           ? list.map((entry) => `${shortId(entry.id)} ${entry.mode ?? ''} ${entry.label ?? ''}`.trim()).join('; ')
           : 'none'
       } catch {
@@ -3543,8 +3604,54 @@ export function apply(ctx, config) {
     },
   }
 
+  const stopTool = {
+    name: 'supa_stop',
+    description: [
+      'Interrupt one of this session\'s workers, or list them.',
+      'Interruption stops the worker\'s current execution; its parked queue and Session survive, so a later message can resume it.',
+      'Call it with no `child` to see what is running, with `child` (id or unique prefix) to stop one, or with `all` to stop every direct child.',
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      properties: {
+        child: { type: 'string', description: 'Child session id or a unique prefix. Omit to list what is running.' },
+        all: { type: 'boolean', description: 'Interrupt every direct child of this session.' },
+      },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => textBlocks(String(value ?? '')),
+    },
+    isConcurrencySafe: () => false,
+    async execute(args, exec) {
+      const agent = exec.agent
+      if (!agent) throw new Error('supa_stop requires a calling agent')
+      const subagents = ctx.get?.('subagents')
+      if (!subagents?.interrupt) throw new Error('this runtime cannot interrupt a child')
+      const kids = await directChildren(agent)
+      if (kids.length === 0) return 'no workers right now'
+      if (args.all) {
+        for (const kid of kids) subagents.interrupt(String(kid.id), { kind: 'ancestor', agent })
+        return `interrupted ${kids.length} worker(s): ${kids.map((kid) => shortId(kid.id)).join(', ')}`
+      }
+      const wanted = String(args.child ?? '').trim()
+      if (!wanted) {
+        return kids
+          .map((kid) => `${shortId(kid.id)} ${kid.activity ?? ''} ${kid.label ?? ''}`.trim())
+          .join('\n')
+      }
+      const matches = kids.filter((kid) => String(kid.id) === wanted
+        || shortId(kid.id) === wanted
+        || String(kid.id).startsWith(wanted))
+      if (matches.length === 0) throw new Error(`no worker matches ${wanted}`)
+      if (matches.length > 1) throw new Error(`ambiguous, matches: ${matches.map((kid) => shortId(kid.id)).join(', ')}`)
+      subagents.interrupt(String(matches[0].id), { kind: 'ancestor', agent })
+      return `interrupted ${shortId(matches[0].id)}; its queue and Session survive, so a later message resumes it`
+    },
+  }
+
   ctx.effect(() => {
-    const disposers = [contextTool, reportTool, inboxTool, modelsTool, spawnTool, requestTool, supplyTool, authorityTool, statusTool]
+    const disposers = [contextTool, reportTool, inboxTool, modelsTool, spawnTool, requestTool, supplyTool, authorityTool, statusTool, stopTool]
       .map((definition) => ctx.tools.register(definition))
     return () => {
       for (const dispose of disposers.reverse()) {
@@ -3559,6 +3666,7 @@ export function apply(ctx, config) {
 
   log(`active (mode=${cfg.mode}, ledger=${cfg.ledgerDir}, autoApprove=${cfg.autoApprove})`)
 }
+
 
 
 
