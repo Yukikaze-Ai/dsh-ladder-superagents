@@ -778,8 +778,8 @@ window.__ModuleLoader__.load({
           request('/supa/state').then((next) => {
             if (!alive) return
             setState(next)
-            // The count in the pill is live data: refresh it quietly.
-            schedule(20000)
+            // The count in the pill is live data, but this payload is not free: poll gently.
+            schedule(60000)
           }).catch(() => {
             // The host half may still be starting; retry instead of staying
             // invisible for the rest of the page's life.
@@ -1297,6 +1297,7 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
 
 

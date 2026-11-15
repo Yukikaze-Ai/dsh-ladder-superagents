@@ -2795,6 +2795,9 @@ export function apply(ctx, config) {
 
   // The web server can bind after this plugin mounts (a restart showed every
   // route missing). Register when it appears instead of checking once.
+  // The header pill polls /supa/state; building the payload is not free.
+  let stateCache = { at: 0, value: null }
+
   const registerWebRoutes = (webServer) => ctx.effect(() => {
     {
       const disposers = [
@@ -2811,7 +2814,19 @@ export function apply(ctx, config) {
         webServer.register({
           kind: 'exact',
           path: '/supa/state',
-          resource: async (request) => jsonResponse(await settingsState(new URL(request.url).searchParams.get('cwd'))),
+          // Building this payload walks the PATH for CLI tiers and asks the llm
+          // service for routes; the header pill polls it, so keep the last answer
+          // for a few seconds instead of paying that on every poll.
+          resource: async (request) => {
+            const cwd = new URL(request.url).searchParams.get('cwd')
+            const now = Date.now()
+            if (!cwd && stateCache.value && now - stateCache.at < 10000) {
+              return jsonResponse(stateCache.value)
+            }
+            const value = await settingsState(cwd)
+            if (!cwd) stateCache = { at: now, value }
+            return jsonResponse(value)
+          },
         }),
         webServer.register({
           kind: 'exact',
@@ -2846,6 +2861,7 @@ export function apply(ctx, config) {
             try {
               const body = raw ? JSON.parse(raw) : {}
               const data = await settingsAction(body)
+            stateCache = { at: 0, value: null }
               res.statusCode = 200
               res.setHeader('content-type', 'application/json')
               res.end(JSON.stringify(data))
