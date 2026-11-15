@@ -2680,7 +2680,10 @@ export function apply(ctx, config) {
       const next = readEnabledSessions().filter((entry) => entry !== id)
       if (body.enabled !== false) next.push(id)
       await writeEnabledSessions(next)
-      return settingsState(cwd)
+      // Keep the click path cheap: a toggle is one file write. The client
+      // refreshes the full state afterwards through the cached read.
+      stateCache = { at: 0, value: null }
+      return { action: 'session', id, enabled: body.enabled !== false }
     }
 
     if (body?.action === 'reset') {

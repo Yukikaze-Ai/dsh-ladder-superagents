@@ -833,8 +833,19 @@ window.__ModuleLoader__.load({
       const toggle = async () => {
         if (locked || busy) return
         setBusy(true)
+        const want = !enabled
         try {
-          setState(await request('/supa/action', { action: 'session', id: sessionId, enabled: !enabled }))
+          await request('/supa/action', { action: 'session', id: sessionId, enabled: want })
+          // The action answers with the change only; update locally instead of
+          // refetching the whole state on the click path.
+          setState((previous) => {
+            if (!previous) return previous
+            const current = previous.supaSessions ?? []
+            const next = want
+              ? [...current.filter((id) => String(id) !== sessionId), sessionId]
+              : current.filter((id) => String(id) !== sessionId)
+            return { ...previous, supaSessions: next }
+          })
         } catch {
           // leave the pill as it was
         } finally {
