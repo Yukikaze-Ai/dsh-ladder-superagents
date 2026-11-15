@@ -58,6 +58,12 @@ const DEFAULTS = {
    * tests, clones and downloads, `all` = every shell call.
    */
   handOffShell: 'long',
+  /**
+   * How a command that would block the turn is handled: `job` points at
+   * `run_in_background` (no tokens, no session), `child` spawns a worker to run
+   * it (the old behaviour, one permanent session per command).
+   */
+  handOffMode: 'job',
   /** Wake a session whose turn ended `blocked`, up to maxBlockedNudges. */
   continueWhenBlocked: true,
   maxBlockedNudges: 3,
@@ -1818,6 +1824,14 @@ export function apply(ctx, config) {
       what = 'a long-running command'
     }
     if (!what) return undefined
+
+    // The right tool for "do not block this turn" is a background job, not a
+    // spawned agent: a job costs no tokens and leaves no session behind. An
+    // agent is for work that needs judgment, and that decision belongs to the
+    // model, so this mode only points at the cheaper tool.
+    if (cfg.handOffMode !== 'child') {
+      return `This command would block the turn (${what}). Run it again with \`run_in_background: true\` and collect it with \`job_output\`; that costs nothing and leaves no session behind. If its output needs judgment — a failing build to diagnose, a test to fix — delegate the chunk with \`supa_spawn\` instead.`
+    }
 
     const handed = handOffCommand(execution.agent, command, what, String(args.workdir ?? ''), execution.signal)
     if (handed === 'full') {
