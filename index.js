@@ -2610,7 +2610,7 @@ export function apply(ctx, config) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['list', 'scan', 'pin', 'add', 'remove', 'move', 'route', 'clear'] },
+        action: { type: 'string', enum: ['list', 'scan', 'pin', 'add', 'update', 'remove', 'move', 'route', 'clear'] },
         model: {
           type: 'string',
           description: 'For `pin`: test every effort this model supports. Omit to pin the ladder\'s codex tiers instead.',
@@ -2743,6 +2743,26 @@ export function apply(ctx, config) {
       }
 
       const ladder = await readLadder(file)
+
+      if (args.action === 'update') {
+        // Editing in place: rename a brain or change its model without losing
+        // the slot, the id, or the tags.
+        const target = ladder.tiers.find((entry) => entry.id === String(args.id ?? ''))
+        if (!target) throw new Error(`no tier ${String(args.id ?? '')}`)
+        const merged = normalizeTier({
+          ...target,
+          ...(args.label !== undefined ? { label: args.label } : {}),
+          ...(args.model !== undefined ? { model: args.model } : {}),
+          ...(args.reasoning_effort !== undefined ? { reasoningEffort: args.reasoning_effort } : {}),
+          ...(args.tags !== undefined ? { tags: args.tags } : {}),
+          ...(args.command !== undefined ? { command: args.command } : {}),
+        }, target.slot - 1)
+        merged.id = target.id
+        merged.slot = target.slot
+        ladder.tiers = ladder.tiers.map((entry) => (entry.id === target.id ? merged : entry))
+        await writeLadder(file, ladder)
+        return `updated ${merged.id}\n${ladder.tiers.map(renderTier).join('\n')}`
+      }
 
       if (args.action === 'add') {
         const used = new Set(ladder.tiers.map((entry) => entry.slot))
