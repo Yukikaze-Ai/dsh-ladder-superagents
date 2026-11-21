@@ -1193,7 +1193,7 @@ function renumber(tiers) {
 
 function renderTier(tier, index) {
   const tags = Array.isArray(tier.tags) && tier.tags.length ? ` · [${tier.tags.join(', ')}]` : ''
-  const brain = tier.readonly ? ' · brain (read-only)' : ''
+  const brain = tier.readonly ? ' · read-only' : ''
   return `T${tier.slot}. ${tier.id} ${tier.label} — ${tierRoute(tier)} · covers up to ${tier.ceiling}${tags}${brain}${tier.enabled ? '' : ' · disabled'}`
 }
 

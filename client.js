@@ -181,7 +181,7 @@ window.__ModuleLoader__.load({
         }, confirming ? t('Sure?') : '✕')))
     }
 
-    function Catalog({ catalog, declared, llm, failures, busy, onScan, onPin, onAdd, canPinTiers }) {
+    function Catalog({ catalog, declared, profile, llm, failures, busy, onScan, onPin, onAdd, canPinTiers }) {
       const [pending, setPending] = useState('')
       const [adding, setAdding] = useState('')
       const [verifiedOnly, setVerifiedOnly] = useState(false)
@@ -348,6 +348,8 @@ window.__ModuleLoader__.load({
                   driver: 'claude',
                   model: model.id,
                   tags: ['review', 'second-brain', 'long-context'],
+                  // In brain mode a new advisor is read-only by definition.
+                  ...(profile === 'brain' ? { readonly: true } : {}),
                 },
               }),
             }, t('Add')))))
@@ -676,6 +678,10 @@ window.__ModuleLoader__.load({
       }, [load])
 
       const tiers = state?.tiers ?? []
+      const profile = state?.config?.profile ?? 'ladder'
+      // In brain mode the ladder is only a shelf of advisors: list the
+      // read-only ones, keep the rest out of the way.
+      const brains = tiers.filter((tier) => tier.readonly === true)
       const reorder = useCallback((id, slot) => {
         if (id) act({ action: 'move', id, to: slot })
       }, [act])
@@ -696,7 +702,7 @@ window.__ModuleLoader__.load({
       return h('div', { style: s.page },
         h('div', { style: s.head },
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
-            h('div', { style: s.title }, t('Model ladder')),
+            h('div', { style: s.title }, profile === 'brain' ? t('Brains') : t('Model ladder')),
             h('div', { style: s.sub }, summary),
             h('div', { style: s.sub }, state.file)),
           h('div', { style: s.actions },
@@ -730,7 +736,31 @@ window.__ModuleLoader__.load({
             h('div', { style: s.hint }, t('Without T1 there is no tier to catch the hardest task. SupA cannot be enabled and spawns are refused; put a model in slot 1 first.')))
           : null,
 
-        h('div', { style: s.section },
+        // Brain mode is a different product: no ladder, no slots, no difficulty
+        // ranking. It lists the external brains this folder can consult.
+        profile === 'brain'
+          ? h('div', { style: s.card },
+            h('div', { style: s.sectionTitle }, t('External brains')),
+            h('div', { style: s.hint }, t('Brains read this folder and answer with thinking, review and blind spots. They cannot edit files or run commands: the harness stays in charge of every change, and its own subagents stay its own.')),
+            brains.length === 0
+              ? h('div', { style: { ...s.hint, paddingTop: 8 } }, t('No brain yet. Add a CLI tier below (Claude is the verified one) — it is added as read-only.'))
+              : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 8 } },
+                ...brains.map((tier) => h('div', {
+                  key: tier.id,
+                  style: { display: 'flex', gap: 10, alignItems: 'center', padding: '8px 10px', borderRadius: 8, border: `1px solid ${color.border}` },
+                },
+                h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 } },
+                  h('div', { style: { fontSize: 13, color: color.text } }, tier.label),
+                  h('div', { style: s.meta }, [tier.driver || tier.kind, tier.model].filter(Boolean).join(' · ') || tier.id),
+                  tier.tags?.length ? h('div', { style: s.meta }, tier.tags.join(' · ')) : null),
+                h('button', {
+                  style: s.btn,
+                  disabled: busy,
+                  onClick: () => act({ action: 'remove', id: tier.id }),
+                  title: 'Remove this brain',
+                }, t('Remove'))))),
+            h('div', { style: { ...s.hint, paddingTop: 10 } }, t('Ask one with `supa_brain { needs: [...], brief: "..." }`; the answer lands in `supa_inbox`.')))
+          : h('div', { style: s.section },
           ...Array.from({ length: 10 }, (_, offset) => {
             const slot = offset + 1
             const tier = tiers.find((entry) => entry.slot === slot)
@@ -776,6 +806,7 @@ window.__ModuleLoader__.load({
         h(Catalog, {
           catalog: state.catalog,
           declared: state.declared,
+          profile,
           llm: state.llm,
           failures: state.failures,
           busy,
@@ -986,6 +1017,20 @@ window.__ModuleLoader__.load({
 
     const ZH = {
       'Model ladder': '模型阶梯',
+      Brains: '外部大脑',
+      'External brains': '外部大脑',
+      'Brains read this folder and answer with thinking, review and blind spots. They cannot edit files or run commands: the harness stays in charge of every change, and its own subagents stay its own.':
+        '大脑读这个文件夹，给出思路、review 和盲区。它不能改文件、不能跑命令——所有改动仍由 harness 负责，它自己的子代理也仍归它管。',
+      'No brain yet. Add a CLI tier below (Claude is the verified one) — it is added as read-only.':
+        '还没有大脑。在下面加一个 CLI 档位（Claude 是已验证的那个），它会以只读方式加入。',
+      'Remove this brain': '移除这个大脑',
+      'Ask one with `supa_brain { needs: [...], brief: "..." }`; the answer lands in `supa_inbox`.':
+        '用 `supa_brain { needs: [...], brief: "..." }` 问它；答案会进 `supa_inbox`。',
+      'Mode': '模式',
+      'ladder (SupA spawns workers)': '阶梯（SupA 派 worker）',
+      'brain (native subagents + external brains)': '大脑（原生子代理 + 外部大脑）',
+      'brain keeps the harness in charge of its own subagents and only adds read-only external brains':
+        '大脑模式：子代理交给 harness 自己管，我们只加只读的外部大脑',
       'Model usage': '模型使用统计',
       'Per tier': '每个档位',
       'Completion': '完成比例',
