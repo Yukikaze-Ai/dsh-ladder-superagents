@@ -188,6 +188,8 @@ SupA，而且这个选择按会话记住：
 ## 难度路由
 
 > 想直接上手：见 [使用指南](docs/USAGE.md)——四样东西分清楚就能用对。
+>
+> 只想用外部大脑（Claude / Codex 当顾问，DSH 自己干活）：见 **[EB 模式指南](docs/EB.md)**。
 
 SupA 给任务打 1-10 分；`supa_spawn` 带上 `difficulty: 7` 就会选出对应层级。
 

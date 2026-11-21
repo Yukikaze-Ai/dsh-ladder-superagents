@@ -197,6 +197,8 @@ Every session holds a level: `workspace` (default) or `full`.
 ## Difficulty routing
 
 > New here? The [usage guide](docs/USAGE.md) is the short version: four kinds of work, four tools.
+>
+> Only want external brains (Claude or Codex as an advisor while DSH keeps doing the work)? See the **[EB guide](docs/EB.md)**.
 
 The SupA scores a task 1-10; `supa_spawn` with `difficulty: 7` picks the tier.
 
