@@ -2,6 +2,64 @@
 
 All notable changes to this plugin. Dates are ISO.
 
+## 0.4.0 — 2026-11-21
+
+The product is chosen per session, not per profile, and the brains a session can
+consult are its own.
+
+### Added
+
+- **A session pins its own product.** `sessions.json` now carries `modes`, and
+  `supa_session { mode: "normal" | "eb" | "default" }` writes it. One session can
+  run the ladder while another runs external brains at the same time; the other
+  tool refuses with a message that says how to switch, instead of doing nothing.
+- **A session pins its own brains.** `supa_session { brains: [...] }` (or the
+  checkboxes in Usage → Settings) narrows a session to a subset of the read-only
+  CLI tiers; an empty list means every brain. The panel and the single-brain
+  route both honour it.
+- **Brains are added, edited and removed from the session that uses them.** The
+  global settings page keeps only profile-wide policy; the External brains card
+  moved into Usage → Settings.
+- **`panel: true`** asks every matching brain the same brief at once, one
+  conversation each, and says how many went out.
+- **`supa_models update`** edits a tier in place — rename it, change its model,
+  its effort or its tags — instead of remove-and-add.
+
+### Fixed
+
+- **Read-only is enforced per driver, not assumed.** Codex brains run with
+  `-s read-only` (verified with a real call); Claude brains run in plan mode with
+  a read-tool allowlist (`Read`, `Grep`, `Glob`) and a denial that also names
+  `PowerShell` and `Agent`. A driver that cannot enforce read-only is refused as
+  a brain instead of quietly getting write access.
+- **A brain can never degrade into a write-capable tier.** The EB pool and the
+  fallback chain stay inside the read-only tiers, and the built-in harness
+  fallback is never substituted for a brain.
+- **A failed tier is no longer disabled.** `dropTier` is gone: a failure only
+  starts the cooldown, matching the documented behaviour and leaving the slot in
+  the user's hands.
+- **A CLI target gets its own short charter** — no `supa_report`, no subagents,
+  "your stdout is the report" — instead of the worker charter that taught it to
+  apologise.
+- **A pill click no longer erases session state.** `enabled`, `modes` and
+  `brains` are written through one reader/writer pair.
+- **Two runs of one CLI conversation are serialised**, so a resume cannot race
+  the run that is still writing it.
+- **Docs defaults match the code**: `mode` is `all`, the cooldown is 30 minutes,
+  a CLI call may take 15 minutes.
+
+### Changed
+
+- **Tabs follow the ARIA tabs pattern** — `role="tablist"`/`tab`, roving tabindex,
+  arrow/Home/End keys, selection follows focus, and an underline indicator rather
+  than colour alone.
+- **The brain form is labelled**: every control has a real `<label>`, the model
+  and effort pickers read each driver's own list (Codex's comes from the scanned
+  catalog, Claude's from the built-in one), and helper buttons are
+  `type="button"`.
+- The model catalog is baked into the bundle rather than read from a side file,
+  so a missing or hand-edited file can no longer break the pickers.
+
 ## 0.3.1 — 2026-11-21
 
 The CLI tiers run on macOS, a CLI conversation can be resumed, and routing can
