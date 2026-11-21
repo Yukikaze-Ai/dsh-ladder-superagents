@@ -446,6 +446,9 @@ window.__ModuleLoader__.load({
       }
 
       const modelChoices = brain ? choicesFor(driver) : []
+      // Claude exposes a five-step effort ladder; catalog.json says which
+      // drivers have one, so no other driver grows a dead control.
+      const effortChoices = brain ? (declared?.[driver]?.efforts ?? []) : []
 
       const submit = async () => {
         setError('')
@@ -458,6 +461,7 @@ window.__ModuleLoader__.load({
                 kind: 'cli',
                 driver,
                 model: model || undefined,
+                reasoningEffort: effort || undefined,
                 tags: ['review', 'second-brain'],
                 // A brain exists to think, never to change the workspace.
                 readonly: true,
@@ -535,7 +539,16 @@ window.__ModuleLoader__.load({
               onChange: (event) => setModel(event.target.value),
             }),
           brain
-            ? null
+            ? effortChoices.length > 0
+              ? h('select', {
+                style: { ...s.input, width: 120 },
+                value: effort,
+                title: t('Faster ↔ Smarter'),
+                onChange: (event) => setEffort(event.target.value),
+              },
+              h('option', { value: '' }, t('model default')),
+              ...effortChoices.map((level) => h('option', { key: level, value: level }, level)))
+              : null
             : h('input', {
               style: { ...s.input, width: 100 },
               placeholder: t('effort'),
@@ -821,7 +834,7 @@ window.__ModuleLoader__.load({
                 },
                 h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 } },
                   h('div', { style: { fontSize: 13, color: color.text } }, tier.label),
-                  h('div', { style: s.meta }, [tier.driver || tier.kind, tier.model].filter(Boolean).join(' · ') || tier.id),
+                  h('div', { style: s.meta }, [tier.driver || tier.kind, tier.model, tier.reasoningEffort].filter(Boolean).join(' · ') || tier.id),
                   tier.tags?.length ? h('div', { style: s.meta }, tier.tags.join(' · ')) : null),
                 h('button', {
                   style: s.btn,
@@ -1124,6 +1137,8 @@ window.__ModuleLoader__.load({
         '大脑是一个只读的 CLI 档位：读这个文件夹并给出回答，不能改文件、不能跑命令。',
       'model (blank = CLI default)': '模型（留空用 CLI 默认）',
       'CLI default': 'CLI 默认',
+      'model default': '模型默认（medium）',
+      'Faster ↔ Smarter': '更快 ↔ 更聪明',
       'The harness keeps its own subagents; the plugin only adds read-only external brains':
         '子代理交给 harness 自己管，我们只加只读的外部大脑',
       'Model usage': '模型使用统计',
