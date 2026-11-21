@@ -9,6 +9,13 @@ match a capability instead of only a difficulty.
 
 ### Added
 
+- **Two products, one plugin.** `profile: normal` is the ladder: difficulty
+  routing, harness workers, the dependency and shell guards. `profile: eb` is
+  external brains: native DSH keeps and manages its own subagents, and the
+  plugin only lends read-only advisors plus the ledger and the queue.
+  `supa_spawn` does not exist in EB mode — there it is `supa_brain`, and it
+  refuses anything that is not an external CLI tier. `ladder` and `brain` are
+  still accepted as the older spellings.
 - **`supa_stop`** lists the workers of this session and interrupts one, a
   unique prefix, or all of them. Interruption stops the current execution; the
   parked queue and the Session survive, so a later message resumes it.

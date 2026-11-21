@@ -535,9 +535,9 @@ window.__ModuleLoader__.load({
             disabled: busy,
             onChange: (event) => onConfig({ profile: event.target.value }),
           },
-          h('option', { value: 'normal' }, t('Normal (the SupA ladder)')),
-          h('option', { value: 'eb' }, t('EB (external brains)'))),
-          t('EB keeps the harness in charge of its own subagents and only adds read-only external brains')),
+          h('option', { value: 'normal' }, t('Ladder')),
+          h('option', { value: 'eb' }, t('External brains'))),
+          t('The harness keeps its own subagents; the plugin only adds read-only external brains')),
         field(t('Session scope'),
           h('select', {
             style: control,
@@ -1027,10 +1027,9 @@ window.__ModuleLoader__.load({
       'Ask one with `supa_brain { needs: [...], brief: "..." }`; the answer lands in `supa_inbox`.':
         '用 `supa_brain { needs: [...], brief: "..." }` 问它；答案会进 `supa_inbox`。',
       'Mode': '模式',
-      'Normal (the SupA ladder)': '普通模式（SupA 阶梯）',
-      'EB (external brains)': 'EB（外部大脑）',
-      'EB keeps the harness in charge of its own subagents and only adds read-only external brains':
-        '大脑模式：子代理交给 harness 自己管，我们只加只读的外部大脑',
+      'Ladder': '阶梯模式',
+      'The harness keeps its own subagents; the plugin only adds read-only external brains':
+        '子代理交给 harness 自己管，我们只加只读的外部大脑',
       'Model usage': '模型使用统计',
       'Per tier': '每个档位',
       'Completion': '完成比例',
@@ -1389,6 +1388,7 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
 
 
