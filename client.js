@@ -1059,6 +1059,8 @@ window.__ModuleLoader__.load({
       'Model ladder': '模型阶梯',
       Brains: '外部大脑',
       'External brains': '外部大脑',
+      'Brains': '外部大脑',
+      'brains': '个大脑',
       'Brains read this folder and answer with thinking, review and blind spots. They cannot edit files or run commands: the harness stays in charge of every change, and its own subagents stay its own.':
         '大脑读这个文件夹，给出思路、review 和盲区。它不能改文件、不能跑命令——所有改动仍由 harness 负责，它自己的子代理也仍归它管。',
       'No brain yet. Add a CLI tier below (Claude is the verified one) — it is added as read-only.':
