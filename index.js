@@ -138,6 +138,14 @@ const BRAIN_CHARTER = [
   '- Use the ledger (`.dsh-supa/context.jsonl`) for what must survive: a decision a brain made, a finding you will need later. A brain\'s memory does not leave its own conversation.',
 ].join('\n')
 
+/** What a CLI target is told instead of the worker charter: it has no tools. */
+const BRAIN_CLI_CHARTER = [
+  '## How to answer',
+  '- You are a CLI process, not a harness session: you have none of the `supa_*` tools. Do not look for them, and do not apologise for their absence.',
+  '- Your final stdout is the report. Nothing else needs calling.',
+  '- Do not start subagents and do not ask a human anything; there is nobody on the other end of a question.',
+].join('\n')
+
 const CHARTER = [
   '# SupA session charter',
   'You are a SupA (super agent) session. This charter overrides ordinary caution in three specific ways.',
@@ -343,15 +351,17 @@ export function parseCliJson(stdout) {
   return { text, sessionId: '' }
 }
 
-/** The key a CLI conversation is remembered under: one per driver and folder. */
-export function cliSessionKey(driver, cwd) {
+/** The key a CLI conversation is remembered under: one per tier and folder. */
+export function cliSessionKey(driver, cwd, tierId = '') {
   let folder = ''
   try {
     folder = resolve(String(cwd || process.cwd()))
   } catch {
     folder = String(cwd || '')
   }
-  return `${String(driver)}|${folder}`
+  // The tier is part of the key: two brains on the same driver are two
+  // conversations, not one shared stream of unrelated briefs.
+  return `${String(driver)}|${String(tierId ?? '')}|${folder}`
 }
 
 let cliSessionCache = null
@@ -441,19 +451,12 @@ async function recordFailure(cwd, cfg, keys, error, tier = null) {
 }
 
 /**
- * A failed tier stays in the ladder, red and disabled, and the user deletes it
- * if they want to. The one exception is a ladder where nothing is usable any
- * more: then the weakest slot is swapped for the built-in fallback, so the pool
- * can still route.
+ * A failed tier stays in the ladder and only its route goes into cooldown; the
+ * user decides what to delete. The one exception is a ladder where nothing is
+ * usable any more: then the weakest slot is swapped for the built-in fallback,
+ * so the pool can still route — unless that slot is a brain, which must never
+ * be replaced by a write-capable harness tier.
  */
-async function dropTier(cwd, cfg, tierId) {
-  if (!tierId) return
-  const ladder = await readLadder(modelsFileOf())
-  const tier = ladder.tiers.find((entry) => entry.id === tierId)
-  if (!tier || tier.enabled === false) return
-  tier.enabled = false
-  await writeLadder(modelsFileOf(), ladder)
-}
 
 const FALLBACK_TIER = {
   label: 'DeepSeek Flash (high)',
@@ -466,6 +469,9 @@ const FALLBACK_TIER = {
 async function ensureUsableRoute(cwd, cfg) {
   const ladder = await readLadder(modelsFileOf())
   if (ladder.tiers.length === 0) return null
+  // EB mode never swaps a brain for the built-in llm fallback: that would put a
+  // write-capable harness tier into a read-only shelf.
+  if (cfg.profile === 'eb') return null
   const failures = readFailures(cwd, cfg)
   // Only failed tiers trigger the fallback. A tier the user switched off by
   // hand is their decision, not a broken route.
@@ -473,6 +479,8 @@ async function ensureUsableRoute(cwd, cfg) {
   if (!allFailed) return null
 
   const bottom = ladder.tiers.reduce((weak, tier) => (tier.slot > weak.slot ? tier : weak), ladder.tiers[0])
+  // Never trade a brain for a harness fallback: read-only is a promise.
+  if (bottom.readonly === true) return null
   // The fallback is the last line: if it failed, the circuit opens instead of
   // replacing it with itself forever.
   if (bottom.id === 'fallback' || String(bottom.id).startsWith('fallback-')) return null
@@ -1536,7 +1544,15 @@ export const CLI_DRIVERS = {
       // A brain may only read: plan mode is Claude's own read-only mode, which
       // is enforcement, not a request in the prompt.
       ...(readonly
-        ? ['--permission-mode', 'plan', '--disallowedTools', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash']
+        ? [
+          '--permission-mode', 'plan',
+          // An allowlist beats a denylist here: PowerShell (the shell on
+          // Windows), Agent and any MCP tool the account carries would all
+          // survive a list of "Write/Edit/Bash".
+          '--allowedTools', 'Read', 'Grep', 'Glob',
+          '--disallowedTools', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit',
+          'Bash', 'PowerShell', 'Agent',
+        ]
         : authority === 'full'
           // A SupA never waits for a human: either skip the checks (full) or make
           // sure a permission prompt resolves to "no" instead of hanging stdout.
@@ -3726,18 +3742,22 @@ export function apply(ctx, config) {
           const needs = (Array.isArray(args.needs) ? args.needs : [])
             .map((need) => String(need ?? '').trim())
             .filter(Boolean)
-          // In brain mode only CLI tiers are candidates: a harness tier would
-          // be a second delegation system, which is exactly what this mode
-          // avoids.
+          // In brain mode only read-only CLI tiers are candidates: a harness
+          // tier would be a second delegation system, and a read-write CLI
+          // would be a brain with hands.
           const pool = brainProfile
-            ? { ...ladder, tiers: ladder.tiers.filter((entry) => isCliTier(entry)) }
+            ? { ...ladder, tiers: ladder.tiers.filter((entry) => isCliTier(entry) && entry.readonly === true) }
             : ladder
           if (brainProfile && pool.tiers.length === 0) {
-            throw new Error('brain mode needs at least one CLI tier in the ladder; add one with `supa_models add` (driver claude, readonly true)')
+            throw new Error('brain mode needs at least one read-only CLI tier; add one with `supa_models add` (driver claude, readonly true)')
           }
           const picked = await resolveRoute(pool, Math.min(10, Math.max(1, Number(args.difficulty) || 5)), cwd, needs)
           tier = picked.tier
-          routeChain = picked.chain
+          // A read-only pick must never degrade into a tier with hands: the
+          // fallback chain stays inside the same promise.
+          routeChain = tier?.readonly === true
+            ? picked.chain.filter((entry) => entry.readonly === true)
+            : picked.chain
           if (needs.length > 0 && picked.needsMatched === false) {
             // Say it once: the task asked for a capability no tier declares, so
             // it lands on the difficulty pick instead of a tagged one.
@@ -3848,8 +3868,14 @@ export function apply(ctx, config) {
         chosen.push('extra')
       }
 
-      parts.push(CHILD_CHARTER)
-      parts.push(TASK_CHARTER)
+      // A CLI target has no supa_* tools, so the worker charter would only
+      // teach it to fail; it gets the short "your stdout is the report" rule.
+      if (cliTarget) {
+        parts.push(BRAIN_CLI_CHARTER)
+      } else {
+        parts.push(CHILD_CHARTER)
+        parts.push(TASK_CHARTER)
+      }
 
       let pack = parts.join('\n\n')
       if (pack.length > cfg.maxPackBytes) {
@@ -3905,19 +3931,19 @@ export function apply(ctx, config) {
         }
 
         // Out of same-tier attempts: the route is a fact about the model, so
-        // mark it and free the slot.
+        // record it and let the cooldown take it out of rotation. The slot is
+        // NOT disabled: a provider outage should cost a wait, not a ladder tier
+        // the user has to add back by hand.
         if (tier?.id) {
           recordFailure(cwd, cfg, [`route:${tierRoute(tier)}`], stop, tier).catch(() => {})
           const isFallback = tier.id === 'fallback' || String(tier.id).startsWith('fallback-')
           if (isFallback) {
             // The last line failed too. Fail loudly and leave the state alone:
             // the user decides whether to retry now or start a new session.
-            dropTier(cwd, cfg, tier.id).catch(() => {})
             enqueueParentNote('the built-in DeepSeek fallback failed as well: every route in the ladder is down, so this assignment cannot be retried until a provider recovers', 'retry')
             return
           }
-          dropTier(cwd, cfg, tier.id)
-            .then(() => ensureUsableRoute(cwd, cfg))
+          ensureUsableRoute(cwd, cfg)
             .then((note) => {
               if (note) enqueueParentNote(note, 'retry')
             })
@@ -3945,7 +3971,7 @@ export function apply(ctx, config) {
         const command = resolveOnPath(cliCommandFor(tier, cfg))
         if (!command) throw new Error(`${driverName} CLI not found; set command on the tier or install it`)
         const wantsJson = driver.resume === true
-        const sessionKey = cliSessionKey(driverName, cwd)
+        const sessionKey = cliSessionKey(driverName, cwd, tier.id)
         const stored = wantsJson ? readCliSessions()[sessionKey]?.sessionId ?? '' : ''
         const sessionId = wantsJson && args.fresh !== true && stored ? stored : ''
         const baseArgs = driver.args({
@@ -4393,6 +4419,7 @@ export function apply(ctx, config) {
 
   log(`active (mode=${cfg.mode}, ledger=${cfg.ledgerDir}, autoApprove=${cfg.autoApprove})`)
 }
+
 
 
 

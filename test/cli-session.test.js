@@ -37,11 +37,12 @@ test('an empty stream parses to nothing', () => {
   assert.deepEqual(parseCliJson(undefined), { text: '', sessionId: '' })
 })
 
-test('a session key is one per driver and folder', () => {
-  const key = cliSessionKey('claude', 'C:\\work')
-  assert.equal(key, cliSessionKey('claude', 'C:\\work'))
-  assert.notEqual(key, cliSessionKey('claude', 'C:\\other'))
-  assert.notEqual(key, cliSessionKey('codex', 'C:\\work'))
+test('a session key is one per driver, tier and folder', () => {
+  const key = cliSessionKey('claude', 'C:\\work', 't1')
+  assert.equal(key, cliSessionKey('claude', 'C:\\work', 't1'))
+  assert.notEqual(key, cliSessionKey('claude', 'C:\\work', 't2'))
+  assert.notEqual(key, cliSessionKey('claude', 'C:\\other', 't1'))
+  assert.notEqual(key, cliSessionKey('codex', 'C:\\work', 't1'))
 })
 
 test('claude declares resume, asks for JSON and passes --resume only when it has an id', () => {

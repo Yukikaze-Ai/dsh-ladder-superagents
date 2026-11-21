@@ -9,9 +9,14 @@ test('a brain runs in plan mode and cannot write, even with full authority', () 
   const claude = args({ authority: 'full', readonly: true })
   assert.equal(claude[claude.indexOf('--permission-mode') + 1], 'plan')
   assert.equal(claude.includes('--dangerously-skip-permissions'), false)
-  // The write-capable tools are denied outright.
-  const denied = claude.slice(claude.indexOf('--disallowedTools') + 1, claude.indexOf('--disallowedTools') + 7)
-  for (const tool of ['Write', 'Edit', 'Bash']) assert.ok(denied.includes(tool), `missing ${tool}`)
+  // An allowlist keeps the read tools and nothing else.
+  const allowed = claude.slice(claude.indexOf('--allowedTools') + 1, claude.indexOf('--disallowedTools'))
+  assert.deepEqual(allowed, ['Read', 'Grep', 'Glob'])
+  // The denylist also names the shell Windows actually uses and subagents.
+  const denied = claude.slice(claude.indexOf('--disallowedTools') + 1)
+  for (const tool of ['Write', 'Edit', 'Bash', 'PowerShell', 'Agent']) {
+    assert.ok(denied.includes(tool), `missing ${tool}`)
+  }
 })
 
 test('a worker keeps the permission behaviour it had', () => {
