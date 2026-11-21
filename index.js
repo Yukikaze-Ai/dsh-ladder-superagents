@@ -1330,11 +1330,27 @@ export function quoteForShell(arg) {
  * nothing to discover — only aliases it accepts on `--model`. `declared` says
  * so in the UI instead of pretending this was scanned.
  */
-export const CLAUDE_MODELS = [
-  { id: 'opus', label: 'Opus' },
-  { id: 'sonnet', label: 'Sonnet' },
-  { id: 'haiku', label: 'Haiku' },
-]
+/**
+ * The known models per driver live in `catalog.json` next to this file, so a
+ * new model is a data change, not a release. A driver with `source: declared`
+ * has no machine-readable list (Claude answers a chat prompt); `discovered`
+ * means the driver command reads the real thing.
+ */
+export function loadDriverCatalog() {
+  const fallback = { drivers: { claude: { label: 'Claude Code', source: 'declared', resume: true, models: [{ id: 'opus', label: 'Opus' }] } } }
+  try {
+    const file = new URL('./catalog.json', import.meta.url)
+    const parsed = JSON.parse(readFileSync(file, 'utf8'))
+    if (!parsed || typeof parsed !== 'object' || !parsed.drivers || typeof parsed.drivers !== 'object') return fallback
+    return parsed
+  } catch {
+    // A missing or broken catalog only costs the dropdown, never a run.
+    return fallback
+  }
+}
+
+export const CLAUDE_MODELS = (loadDriverCatalog().drivers?.claude?.models ?? [])
+  .map((entry) => ({ id: String(entry.id), label: String(entry.label ?? entry.id) }))
 
 export const CLI_DRIVERS = {
   codex: {
@@ -2787,7 +2803,9 @@ export function apply(ctx, config) {
       catalog,
       // Claude Code has no machine-readable model list; these are the aliases
       // it accepts, shown as declared rather than scanned.
-      declared: { claude: CLAUDE_MODELS },
+      // Every driver's known models come from catalog.json, so the UI can
+      // offer a picker even where the CLI cannot list its own models.
+      declared: loadDriverCatalog().drivers ?? {},
       config: {
         mode: cfg.mode,
         profile: cfg.profile,

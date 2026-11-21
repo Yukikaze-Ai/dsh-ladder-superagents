@@ -327,14 +327,17 @@ window.__ModuleLoader__.load({
                     : null)
               }))
             : h('div', { style: s.hint }, t('No catalog cached. Scan to read the model list.')),
-        declared?.claude?.length
-          ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 6 } },
-            h('div', { style: s.hint }, 'Claude Code — 声明的别名（该 CLI 没有可机读的模型列表，不是扫描结果）'),
-            ...declared.claude.map((model) => h('div', {
+        // Every driver whose models come from catalog.json rather than a scan:
+        // one row per model, so adding a tier is a click.
+        ...Object.entries(declared ?? {})
+          .filter(([name, entry]) => name !== 'codex' && Array.isArray(entry?.models) && entry.models.length > 0)
+          .map(([name, entry]) => h('div', { key: name, style: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 6 } },
+            h('div', { style: s.hint }, `${entry.label ?? name} — ${entry.source === 'discovered' ? t('scanned') : t('declared list')}`),
+            ...entry.models.map((model) => h('div', {
               key: model.id,
               style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'nowrap' },
             },
-            h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, `${model.label} (--model ${model.id})`),
+            h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, `${model.label ?? model.id} (--model ${model.id})`),
             h('span', { style: { ...s.meta, flex: 1 } }, ''),
             h('button', {
               style: s.btn,
@@ -343,17 +346,16 @@ window.__ModuleLoader__.load({
               onClick: () => onAdd({
                 action: 'add',
                 tier: {
-                  label: `Claude Code (${model.label})`,
+                  label: `${entry.label ?? name} (${model.label ?? model.id})`,
                   kind: 'cli',
-                  driver: 'claude',
+                  driver: name,
                   model: model.id,
                   tags: ['review', 'second-brain', 'long-context'],
                   // In brain mode a new advisor is read-only by definition.
                   ...(profile === 'eb' ? { readonly: true } : {}),
                 },
               }),
-            }, t('Add')))))
-          : null,
+            }, t('Add')))))),
         llm?.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 6 } },
             h('div', { style: s.hint }, t('Harness routes (read live from the llm service)')),
@@ -432,16 +434,18 @@ window.__ModuleLoader__.load({
       const [ceiling, setCeiling] = useState('5')
       const [error, setError] = useState('')
 
-      // A brain's model is picked, not typed: Claude declares its aliases and
-      // the codex catalog is whatever `scan` last read. Drivers with no known
-      // list keep the free-text field.
-      const modelChoices = brain
-        ? driver === 'claude'
-          ? (declared?.claude ?? []).map((entry) => ({ id: entry.id, label: entry.label }))
-          : driver === 'codex' || driver === 'cli'
-            ? (catalog?.models ?? []).map((entry) => ({ id: entry.slug, label: entry.slug }))
-            : []
-        : []
+      // A brain's model is picked, not typed. Codex's list comes from the last
+      // `scan`; every other driver's comes from catalog.json; a driver with
+      // neither keeps the free-text field.
+      const choicesFor = (name) => {
+        if (name === 'codex') {
+          const scanned = (catalog?.models ?? []).map((entry) => ({ id: entry.slug, label: entry.slug }))
+          if (scanned.length > 0) return scanned
+        }
+        return (declared?.[name]?.models ?? []).map((entry) => ({ id: entry.id, label: entry.label ?? entry.id }))
+      }
+
+      const modelChoices = brain ? choicesFor(driver) : []
 
       const submit = async () => {
         setError('')
@@ -494,12 +498,7 @@ window.__ModuleLoader__.load({
                 const next = event.target.value
                 setDriver(next)
                 // Keep the model valid for the driver that was just picked.
-                const choices = next === 'claude'
-                  ? (declared?.claude ?? [])
-                  : next === 'codex'
-                    ? (catalog?.models ?? []).map((entry) => ({ id: entry.slug }))
-                    : []
-                setModel(choices[0]?.id ?? '')
+                setModel(choicesFor(next)[0]?.id ?? '')
               },
             },
             ...drivers.map((name) => h('option', { key: name, value: name }, name)))
@@ -1175,6 +1174,7 @@ window.__ModuleLoader__.load({
       'Scan': '扫描',
       'models': '个模型',
       'scanned': '扫描于',
+      'declared list': '来自 catalog.json 的已知模型',
       'verified usable': '个已验证可用',
       'verified only': '只看已验证',
       'scanned only': '仅扫描',

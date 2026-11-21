@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "note": "Known models per CLI driver. `declared` means the CLI has no machine-readable list (Claude answers a chat prompt, not a catalog); `discovered` means a driver command reads the real list. Anything not listed here can still be typed by hand.",
+  "drivers": {
+    "claude": {
+      "label": "Claude Code",
+      "source": "declared",
+      "resume": true,
+      "models": [
+        { "id": "opus", "label": "Opus" },
+        { "id": "sonnet", "label": "Sonnet" },
+        { "id": "haiku", "label": "Haiku" },
+        { "id": "claude-opus-5-5", "label": "Opus 5.5" },
+        { "id": "claude-sonnet-5-5", "label": "Sonnet 5.5" },
+        { "id": "claude-haiku-5-5", "label": "Haiku 5.5" }
+      ]
+    },
+    "codex": {
+      "label": "Codex CLI",
+      "source": "discovered",
+      "resume": true,
+      "models": []
+    },
+    "gemini": {
+      "label": "Gemini CLI",
+      "source": "unknown",
+      "models": []
+    },
+    "qwen": {
+      "label": "Qwen Code",
+      "source": "unknown",
+      "models": []
+    },
+    "cursor": {
+      "label": "Cursor Agent",
+      "source": "declared",
+      "models": []
+    },
+    "kimi": {
+      "label": "Kimi CLI",
+      "source": "declared",
+      "models": []
+    },
+    "opencode": {
+      "label": "OpenCode",
+      "source": "declared",
+      "models": []
+    },
+    "aider": {
+      "label": "Aider",
+      "source": "declared",
+      "models": []
+    },
+    "copilot": {
+      "label": "Copilot CLI",
+      "source": "declared",
+      "models": []
+    },
+    "goose": {
+      "label": "Goose",
+      "source": "declared",
+      "models": []
+    }
+  }
+}
