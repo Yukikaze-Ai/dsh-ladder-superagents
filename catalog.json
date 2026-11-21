@@ -1,18 +1,28 @@
 {
-  "version": 1,
-  "note": "Known models per CLI driver. `declared` means the CLI has no machine-readable list (Claude answers a chat prompt, not a catalog); `discovered` means a driver command reads the real list. Anything not listed here can still be typed by hand.",
+  "version": 2,
+  "note": "Known models per CLI driver. `declared` means the CLI has no machine-readable list (Claude answers a chat prompt, not a catalog); `discovered` means a driver command reads the real list. Every id under claude was verified with a real `claude -p --model <id>` call on 2026-11-21; the display names and blurbs come from Claude Code's own /model menu.",
   "drivers": {
     "claude": {
       "label": "Claude Code",
       "source": "declared",
       "resume": true,
       "models": [
-        { "id": "opus", "label": "Opus" },
-        { "id": "sonnet", "label": "Sonnet" },
-        { "id": "haiku", "label": "Haiku" },
-        { "id": "claude-opus-5-5", "label": "Opus 5.5" },
-        { "id": "claude-sonnet-5-5", "label": "Sonnet 5.5" },
-        { "id": "claude-haiku-5-5", "label": "Haiku 5.5" }
+        { "id": "opus", "label": "Opus（别名）", "note": "别名，跟着账号当前的 Opus" },
+        { "id": "sonnet", "label": "Sonnet（别名）", "note": "别名，跟着账号当前的 Sonnet" },
+        { "id": "haiku", "label": "Haiku（别名）", "note": "别名，跟着账号当前的 Haiku" },
+        { "id": "claude-opus-5-5", "label": "Opus 5.5", "note": "日常与复杂任务" },
+        { "id": "claude-sonnet-5-5", "label": "Sonnet 5.5", "note": "更简单的任务，最省" },
+        { "id": "claude-fable-5-2", "label": "Fable 5.2", "note": "最难的挑战" },
+        { "id": "claude-haiku-5-5", "label": "Haiku 5.5", "note": "快速回答" },
+        { "id": "claude-fable-5-1", "label": "Fable 5.1", "note": "最难、最长的任务" },
+        { "id": "claude-haiku-4-5", "label": "Haiku 4.5", "note": "快速回答" },
+        { "id": "claude-sonnet-5", "label": "Sonnet 5", "note": "日常任务，效率高" },
+        { "id": "claude-opus-5", "label": "Opus 5", "note": "日常与复杂任务" },
+        { "id": "claude-fable-5", "label": "Fable 5", "note": "最难、最长的任务" },
+        { "id": "claude-opus-4-8", "label": "Opus 4.8", "note": "日常与复杂任务" },
+        { "id": "claude-opus-4-7", "label": "Opus 4.7", "note": "日常与复杂任务" },
+        { "id": "claude-opus-4-6", "label": "Opus 4.6", "note": "日常与复杂任务" },
+        { "id": "claude-sonnet-4-6", "label": "Sonnet 4.6", "note": "日常任务，效率高" }
       ]
     },
     "codex": {
@@ -21,45 +31,13 @@
       "resume": true,
       "models": []
     },
-    "gemini": {
-      "label": "Gemini CLI",
-      "source": "unknown",
-      "models": []
-    },
-    "qwen": {
-      "label": "Qwen Code",
-      "source": "unknown",
-      "models": []
-    },
-    "cursor": {
-      "label": "Cursor Agent",
-      "source": "declared",
-      "models": []
-    },
-    "kimi": {
-      "label": "Kimi CLI",
-      "source": "declared",
-      "models": []
-    },
-    "opencode": {
-      "label": "OpenCode",
-      "source": "declared",
-      "models": []
-    },
-    "aider": {
-      "label": "Aider",
-      "source": "declared",
-      "models": []
-    },
-    "copilot": {
-      "label": "Copilot CLI",
-      "source": "declared",
-      "models": []
-    },
-    "goose": {
-      "label": "Goose",
-      "source": "declared",
-      "models": []
-    }
+    "gemini": { "label": "Gemini CLI", "source": "unknown", "models": [] },
+    "qwen": { "label": "Qwen Code", "source": "unknown", "models": [] },
+    "cursor": { "label": "Cursor Agent", "source": "declared", "models": [] },
+    "kimi": { "label": "Kimi CLI", "source": "declared", "models": [] },
+    "opencode": { "label": "OpenCode", "source": "declared", "models": [] },
+    "aider": { "label": "Aider", "source": "declared", "models": [] },
+    "copilot": { "label": "Copilot CLI", "source": "declared", "models": [] },
+    "goose": { "label": "Goose", "source": "declared", "models": [] }
   }
 }

@@ -523,7 +523,11 @@ window.__ModuleLoader__.load({
               onChange: (event) => setModel(event.target.value),
             },
             h('option', { value: '' }, t('CLI default')),
-            ...modelChoices.map((entry) => h('option', { key: entry.id, value: entry.id }, `${entry.label}（${entry.id}）`)))
+            ...modelChoices.map((entry) => h('option', {
+              key: entry.id,
+              value: entry.id,
+              title: entry.note ?? '',
+            }, `${entry.label}（${entry.id}）`)))
             : h('input', {
               style: { ...s.input, width: 150 },
               placeholder: brain ? t('model (blank = CLI default)') : t('model'),
