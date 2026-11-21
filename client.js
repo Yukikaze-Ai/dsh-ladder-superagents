@@ -422,7 +422,7 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function AddForm({ drivers, onAdd, disabled, brain }) {
+    function AddForm({ drivers, onAdd, disabled, brain, declared, catalog }) {
       const [kind, setKind] = useState(brain ? 'cli' : 'llm')
       const [label, setLabel] = useState('')
       const [provider, setProvider] = useState('')
@@ -431,6 +431,17 @@ window.__ModuleLoader__.load({
       const [driver, setDriver] = useState(brain ? 'claude' : 'codex')
       const [ceiling, setCeiling] = useState('5')
       const [error, setError] = useState('')
+
+      // A brain's model is picked, not typed: Claude declares its aliases and
+      // the codex catalog is whatever `scan` last read. Drivers with no known
+      // list keep the free-text field.
+      const modelChoices = brain
+        ? driver === 'claude'
+          ? (declared?.claude ?? []).map((entry) => ({ id: entry.id, label: entry.label }))
+          : driver === 'codex' || driver === 'cli'
+            ? (catalog?.models ?? []).map((entry) => ({ id: entry.slug, label: entry.slug }))
+            : []
+        : []
 
       const submit = async () => {
         setError('')
@@ -476,8 +487,22 @@ window.__ModuleLoader__.load({
             : t('Added to the first free slot; drag it into place afterwards.')),
         h('div', { style: s.row },
           brain
-            ? h('select', { style: s.input, value: driver, onChange: (event) => setDriver(event.target.value) },
-              ...drivers.map((name) => h('option', { key: name, value: name }, name)))
+            ? h('select', {
+              style: s.input,
+              value: driver,
+              onChange: (event) => {
+                const next = event.target.value
+                setDriver(next)
+                // Keep the model valid for the driver that was just picked.
+                const choices = next === 'claude'
+                  ? (declared?.claude ?? [])
+                  : next === 'codex'
+                    ? (catalog?.models ?? []).map((entry) => ({ id: entry.slug }))
+                    : []
+                setModel(choices[0]?.id ?? '')
+              },
+            },
+            ...drivers.map((name) => h('option', { key: name, value: name }, name)))
             : h('select', { style: s.input, value: kind, onChange: (event) => setKind(event.target.value) },
               h('option', { value: 'llm' }, 'llm'),
               h('option', { value: 'cli' }, 'cli')),
@@ -492,12 +517,20 @@ window.__ModuleLoader__.load({
                 value: provider,
                 onChange: (event) => setProvider(event.target.value),
               }),
-          h('input', {
-            style: { ...s.input, width: 150 },
-            placeholder: brain ? t('model (blank = CLI default)') : t('model'),
-            value: model,
-            onChange: (event) => setModel(event.target.value),
-          }),
+          brain && modelChoices.length > 0
+            ? h('select', {
+              style: { ...s.input, width: 150 },
+              value: model,
+              onChange: (event) => setModel(event.target.value),
+            },
+            h('option', { value: '' }, t('CLI default')),
+            ...modelChoices.map((entry) => h('option', { key: entry.id, value: entry.id }, `${entry.label}（${entry.id}）`)))
+            : h('input', {
+              style: { ...s.input, width: 150 },
+              placeholder: brain ? t('model (blank = CLI default)') : t('model'),
+              value: model,
+              onChange: (event) => setModel(event.target.value),
+            }),
           brain
             ? null
             : h('input', {
@@ -797,7 +830,7 @@ window.__ModuleLoader__.load({
             // The form belongs under the button that opens it; leaving it at
             // the bottom of the page looked like the button did nothing.
             manualOpen
-              ? h('div', { style: { paddingTop: 10 } }, h(AddForm, { drivers: state.drivers, onAdd: act, brain: true }))
+              ? h('div', { style: { paddingTop: 10 } }, h(AddForm, { drivers: state.drivers, onAdd: act, brain: true, declared: state.declared, catalog: state.catalog }))
               : null)
           : h('div', { style: s.section },
           ...Array.from({ length: 10 }, (_, offset) => {
@@ -865,7 +898,7 @@ window.__ModuleLoader__.load({
         profile === 'eb'
           ? null
           : manualOpen
-            ? h(AddForm, { drivers: state.drivers, onAdd: act, disabled: tiers.length >= 10 })
+            ? h(AddForm, { drivers: state.drivers, onAdd: act, disabled: tiers.length >= 10, declared: state.declared, catalog: state.catalog })
             : h('button', {
               style: { ...s.btn, alignSelf: 'flex-start' },
               onClick: () => setManualOpen(true),
@@ -1087,6 +1120,7 @@ window.__ModuleLoader__.load({
       'A brain is a read-only CLI tier: it reads this folder and answers, and cannot edit files or run commands.':
         '大脑是一个只读的 CLI 档位：读这个文件夹并给出回答，不能改文件、不能跑命令。',
       'model (blank = CLI default)': '模型（留空用 CLI 默认）',
+      'CLI default': 'CLI 默认',
       'The harness keeps its own subagents; the plugin only adds read-only external brains':
         '子代理交给 harness 自己管，我们只加只读的外部大脑',
       'Model usage': '模型使用统计',
@@ -1447,6 +1481,7 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
 
 
