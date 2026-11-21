@@ -2436,6 +2436,7 @@ export function apply(ctx, config) {
           provider: args.provider,
           model: args.model,
           reasoningEffort: args.reasoning_effort,
+          tags: args.tags,
           ceiling: args.ceiling,
           slot: args.rank === undefined ? freeSlot : Number(args.rank) + 1,
         }, freeSlot - 1)
