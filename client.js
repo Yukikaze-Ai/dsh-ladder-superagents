@@ -698,16 +698,16 @@ window.__ModuleLoader__.load({
       return h('div', { style: s.card },
         h('div', { style: s.sectionTitle }, t('Policy')),
         h('div', { style: s.hint }, t('Saving rewrites this plugin row in the profile config, which restarts it for about a second.')),
-        field(t('Mode'),
+        field(t('Default product'),
           h('select', {
             style: control,
-            value: (config.profile ?? 'normal'),
+            value: profile,
             disabled: busy,
             onChange: (event) => onConfig({ profile: event.target.value }),
           },
           h('option', { value: 'normal' }, t('Ladder')),
           h('option', { value: 'eb' }, t('External brains'))),
-          t('The harness keeps its own subagents; the plugin only adds read-only external brains')),
+          t('Applies to every session that is not pinned; pin one from the header pill in that session')),
         field(t('Session scope'),
           h('select', {
             style: control,
@@ -973,34 +973,6 @@ window.__ModuleLoader__.load({
 
         h(Policy, { config: state.config, busy, onConfig: configure, profile }),
 
-        // The product is per session: the profile sets the default, and any
-        // session can be pinned to the other one without touching the rest.
-        h('div', { style: s.card },
-          h('div', { style: s.sectionTitle }, t('Session modes')),
-          h('div', { style: s.hint }, t('The default below applies to every session; a pin here applies to that one session only, so the ladder and EB can run side by side.')),
-          h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, paddingTop: 8 } },
-            h('span', { style: { fontSize: 12, color: color.muted, minWidth: 150 } }, t('profile default')),
-            h('span', { style: { ...s.chip, whiteSpace: 'nowrap' } }, profile === 'eb' ? t('External brains') : t('Ladder'))),
-          ...(state.supaSessions ?? []).map((id) => {
-            const pinned = state.sessionModes?.[id] ?? 'default'
-            return h('div', {
-              key: id,
-              style: { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderTop: `1px solid ${color.border}` },
-            },
-            h('span', { style: { fontSize: 11.5, color: color.text, minWidth: 150, fontFamily: 'monospace' } }, String(id).slice(0, 20)),
-            h('select', {
-              style: { ...s.input, width: 190 },
-              value: pinned,
-              disabled: busy,
-              onChange: (event) => act({ action: 'session', id, enabled: true, mode: event.target.value }),
-            },
-            h('option', { value: 'default' }, `${t('follow profile')}（${profile === 'eb' ? 'EB' : t('Ladder')}）`),
-            h('option', { value: 'normal' }, t('Ladder')),
-            h('option', { value: 'eb' }, t('External brains'))))
-          }),
-          (state.supaSessions ?? []).length === 0
-            ? h('div', { style: { ...s.hint, paddingTop: 8 } }, t('No session is enabled yet; turn one on with the header pill.'))
-            : null),
 
         // Failures, the codex catalog and the harness routes all exist to build
         // and debug a worker ladder. EB mode has no ladder, so none of them.
@@ -1059,6 +1031,7 @@ window.__ModuleLoader__.load({
       const [state, setState] = useState(null)
       const [busy, setBusy] = useState(false)
       const [hover, setHover] = useState(false)
+      const [open, setOpen] = useState(false)
 
       useEffect(() => {
         let alive = true
@@ -1122,21 +1095,31 @@ window.__ModuleLoader__.load({
       // Workers this session has running: the pill shows activity, not only on/off.
       const running = Number(state.running?.[sessionId] ?? 0) || 0
 
-      const toggle = async () => {
+      const profile = state.config?.profile ?? 'normal'
+      const pinned = state.sessionModes?.[sessionId] ?? 'default'
+      const effective = pinned === 'default' ? profile : pinned
+
+      // One write for the whole session row: on/off and the product pin travel
+      // together, so the pill is the only place a session is configured.
+      const apply = async (patch) => {
         if (locked || busy) return
         setBusy(true)
-        const want = !enabled
         try {
-          await request('/supa/action', { action: 'session', id: sessionId, enabled: want })
-          // The action answers with the change only; update locally instead of
-          // refetching the whole state on the click path.
+          const next = { action: 'session', id: sessionId, enabled, ...patch }
+          await request('/supa/action', next)
           setState((previous) => {
             if (!previous) return previous
+            const want = 'enabled' in patch ? patch.enabled : enabled
             const current = previous.supaSessions ?? []
-            const next = want
+            const sessions = want
               ? [...current.filter((id) => String(id) !== sessionId), sessionId]
               : current.filter((id) => String(id) !== sessionId)
-            return { ...previous, supaSessions: next }
+            const modes = { ...(previous.sessionModes ?? {}) }
+            if ('mode' in patch) {
+              if (patch.mode === 'default') delete modes[sessionId]
+              else modes[sessionId] = patch.mode
+            }
+            return { ...previous, supaSessions: sessions, sessionModes: modes }
           })
         } catch {
           // leave the pill as it was
@@ -1145,45 +1128,84 @@ window.__ModuleLoader__.load({
         }
       }
 
-      return h('button', {
-        type: 'button',
-        onClick: toggle,
-        disabled: locked || busy,
-        onMouseEnter: () => setHover(true),
-        onMouseLeave: () => setHover(false),
-        title: locked
-          ? `SupA answers in every session (mode: ${mode})`
-          : enabled
-            ? 'SupA is on in this session — click to turn it off'
-            : 'SupA is off in this session — click to turn it on',
-        // Matches the header's own utilities: no border, same height, quiet
-        // text. The 6px dot is the only thing that carries the state.
-        style: {
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          height: 26,
-          padding: '0 8px',
-          borderRadius: 8,
-          border: '1px solid transparent',
-          background: hover && !locked ? 'var(--dsw-alias-bg-layer-2, rgba(127,127,127,.12))' : 'transparent',
-          color: enabled ? 'var(--dsw-alias-label-primary, #1f2328)' : 'var(--dsw-alias-label-secondary, #6b7280)',
-          fontSize: 12,
-          fontWeight: 400,
-          lineHeight: 1,
-          cursor: locked ? 'default' : 'pointer',
-          opacity: busy ? 0.6 : 1,
-        },
+      const row = (label, widget) => h('div', {
+        style: { display: 'flex', flexDirection: 'column', gap: 4, padding: '7px 0', borderTop: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.25))' },
       },
-      h('span', {
-        style: {
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          background: enabled ? 'var(--dsw-alias-state-success-primary, #2f855a)' : 'var(--dsw-alias-state-idle-primary, #9aa0aa)',
+      h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary, #6b7280)' } }, label),
+      widget)
+
+      return h('div', { style: { position: 'relative', display: 'inline-flex' } },
+        h('button', {
+          type: 'button',
+          onClick: () => setOpen((value) => !value),
+          disabled: busy,
+          onMouseEnter: () => setHover(true),
+          onMouseLeave: () => setHover(false),
+          title: `SupA · ${effective === 'eb' ? 'external brains' : 'ladder'}${locked ? ` (scope: ${mode})` : ''}`,
+          style: {
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            height: 26,
+            padding: '0 8px',
+            borderRadius: 8,
+            border: '1px solid transparent',
+            background: (hover || open) ? 'var(--dsw-alias-bg-layer-2, rgba(127,127,127,.12))' : 'transparent',
+            color: enabled ? 'var(--dsw-alias-label-primary, #1f2328)' : 'var(--dsw-alias-label-secondary, #6b7280)',
+            fontSize: 12,
+            fontWeight: 400,
+            lineHeight: 1,
+            cursor: 'pointer',
+            opacity: busy ? 0.6 : 1,
+          },
         },
-      }),
-      running > 0 ? `SupA · ${running}` : 'SupA')
+        h('span', {
+          style: {
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: enabled ? 'var(--dsw-alias-state-success-primary, #2f855a)' : 'var(--dsw-alias-state-idle-primary, #9aa0aa)',
+          },
+        }),
+        enabled && effective === 'eb' ? 'SupA · EB' : running > 0 ? `SupA · ${running}` : 'SupA'),
+        open
+          ? h('div', {
+            style: {
+              position: 'absolute',
+              top: 30,
+              right: 0,
+              zIndex: 60,
+              width: 246,
+              padding: '4px 12px 12px',
+              borderRadius: 10,
+              border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.25))',
+              background: 'var(--dsw-alias-bg-layer-1, #fff)',
+              boxShadow: '0 8px 24px rgba(0,0,0,.18)',
+            },
+          },
+          h('div', { style: { fontSize: 11, padding: '8px 0 2px', color: 'var(--dsw-alias-label-secondary, #6b7280)' } }, t('This session')),
+          row(t('SupA'),
+            h('button', {
+              style: { alignSelf: 'flex-start', fontSize: 12, padding: '3px 10px', borderRadius: 7, border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.3))', background: 'transparent', color: 'inherit', cursor: locked ? 'default' : 'pointer' },
+              disabled: locked || busy,
+              onClick: () => apply({ enabled: !enabled }),
+            }, enabled ? t('on') : t('off'))),
+          row(t('Product'),
+            h('select', {
+              style: { width: '100%', fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.3))', background: 'transparent', color: 'inherit' },
+              value: pinned,
+              disabled: locked || busy,
+              onChange: (event) => apply({ mode: event.target.value, enabled: true }),
+            },
+            h('option', { value: 'default' }, `${t('follow default')}（${profile === 'eb' ? t('External brains') : t('Ladder')}）`),
+            h('option', { value: 'normal' }, t('Ladder')),
+            h('option', { value: 'eb' }, t('External brains')))),
+          h('div', { style: { fontSize: 10.5, paddingTop: 8, color: 'var(--dsw-alias-label-secondary, #6b7280)' } },
+            effective === 'eb' ? t('brains: read-only external models, no worker spawns') : t('ladder: SupA spawns workers by difficulty')),
+          locked
+            ? h('div', { style: { fontSize: 10.5, paddingTop: 6, color: 'var(--dsw-alias-label-secondary, #6b7280)' } }, `${t('scope is')} ${mode}`)
+            : null)
+          : null)
     }
 
     // Two whole languages: Chinese when the app runs in Chinese or the user
@@ -1359,6 +1381,15 @@ window.__ModuleLoader__.load({
       'language': '界面语言',
       'auto': '自动',
       'This session': '本会话',
+      'Product': '产品',
+      'Default product': '默认产品',
+      'Applies to every session that is not pinned; pin one from the header pill in that session': '对所有未钉住的会话生效；在会话头部的胶囊里单独钉住某个会话',
+      'on': '已开启',
+      'off': '已关闭',
+      'follow default': '跟随默认',
+      'brains: read-only external models, no worker spawns': '大脑：只读的外部模型，不派 worker',
+      'ladder: SupA spawns workers by difficulty': '阶梯：SupA 按难度派 worker',
+      'scope is': '作用范围是',
       'This view has no session id, so only the profile total is available.': '这个视图没有会话 id，只能看整个 profile 的合计。',
       'Whole profile': '全部会话',
       'Nothing verified yet. Uncheck verified only, then press Pin on a model - one real call proves it.': '还没有验证过任何模型。取消勾选"只看已验证"，然后点某个模型旁的"测试"——一次真实调用就能证明它可用。',
