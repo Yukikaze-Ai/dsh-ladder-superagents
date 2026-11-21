@@ -211,11 +211,11 @@ CLI 档位有完整工具链（读文件、跑命令），你不必替它搬运�
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `mode` | `session` | `all` / `root` / `session` |
+| `mode` | `all` | `all` / `root` / `session`（默认对所有会话生效） |
 | `handOffShell` | `long` | 哪些命令算"会挡路" |
 | `handOffMode` | `job` | `job`=劝去后台；`child`=旧行为（起 worker） |
 | `maxChildren` | 8 | 并发上限 |
 | `tierAttempts` | 2 | 同档重试次数 |
-| `failureCooldownMs` | 2700000 | 失败档冷却 45 分钟 |
-| `cliTimeoutMs` | 600000 | CLI 单次上限 |
+| `failureCooldownMs` | 1800000 | 失败档冷却 30 分钟；**只影响路由，不会禁用档位** |
+| `cliTimeoutMs` | 900000 | CLI 单次上限（15 分钟） |
 | `maxCliResultChars` | — | CLI 输出截断长度 |

@@ -3641,7 +3641,11 @@ export function apply(ctx, config) {
         },
         fresh: {
           type: 'boolean',
-          description: 'For a CLI tier that keeps a conversation (claude): start a new one instead of resuming the session this workspace last used.',
+          description: 'For a CLI tier that keeps a conversation (claude, codex): start a new one instead of resuming the session this tier used last time in this folder.',
+        },
+        panel: {
+          type: 'boolean',
+          description: 'Ask every read-only CLI brain that matches `needs` the same brief at once, each in its own conversation. Use it to collect independent opinions, then compare them; results land in the queue one per brain.',
         },
       },
       required: ['brief'],
@@ -3730,13 +3734,28 @@ export function apply(ctx, config) {
       let choseTier = null
       let routeChain = []
       const brainProfile = cfg.profile === 'eb'
+      // A panel asks every matching brain the same question at once. Each one
+      // answers independently; the caller compares, then can ask a second round
+      // with the others' answers in the brief.
+      let panelTiers = []
+      if (args.panel === true) {
+        const ladder = await readLadder(modelsFileOf(cwd, cfg))
+        const want = (Array.isArray(args.needs) ? args.needs : []).map((need) => String(need ?? '').trim()).filter(Boolean)
+        panelTiers = ladder.tiers.filter((entry) => entry.enabled !== false
+          && isCliTier(entry)
+          && entry.readonly === true
+          && (want.length === 0 || want.every((need) => (entry.tags ?? []).includes(need))))
+        if (panelTiers.length === 0) {
+          throw new Error(`no read-only CLI brain matches ${want.length ? want.join(' + ') : 'the panel'}; add one in the External brains panel`)
+        }
+      }
       // In brain mode the only thing this plugin may dispatch is an external
       // CLI. Anything else is the harness's own business, so require a target
       // instead of silently inheriting the parent's route.
-      if (brainProfile && args.difficulty === undefined && !args.route) {
-        throw new Error('brain mode dispatches only external brains: pass `needs` together with `difficulty`, or `route` a CLI tier. Harness subagents belong to the platform tools.')
+      if (brainProfile && args.difficulty === undefined && !args.route && panelTiers.length === 0) {
+        throw new Error('brain mode dispatches only external brains: pass `needs` together with `difficulty`, `panel: true`, or `route` a CLI tier. Harness subagents belong to the platform tools.')
       }
-      if (args.difficulty !== undefined || args.route) {
+      if (panelTiers.length === 0 && (args.difficulty !== undefined || args.route)) {
         const ladder = await readLadder(modelsFileOf(cwd, cfg))
         let tier = null
         if (args.route) {
@@ -4174,6 +4193,30 @@ export function apply(ctx, config) {
           })
         }
         return { kind: 'session', ...activation }
+      }
+
+      // A panel runs every matching brain against the same pack, each in its
+      // own conversation, and tells the caller how many went out.
+      if (panelTiers.length > 0) {
+        const ids = []
+        for (const panelTier of panelTiers) {
+          try {
+            const started = await launchCli(panelTier, 0)
+            ids.push(started.cliId)
+          } catch (error) {
+            enqueueParentNote(`${panelTier.label} could not start: ${String(error?.message ?? error)}`, 'retry')
+          }
+        }
+        if (ids.length === 0) throw new Error('every brain in the panel failed to start; check the CLI paths with `supa_models list`')
+        sections.push(`panel: ${panelTiers.length}`)
+        return {
+          kind: 'cli',
+          subagentId: '',
+          cliId: ids.join(', '),
+          packBytes: pack.length,
+          sections: `panel (${panelTiers.length})`,
+          tier: panelTiers.map((entry) => entry.id).join(','),
+        }
       }
 
       const activation = await launch(choseTier, 0, true)
