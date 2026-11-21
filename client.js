@@ -498,76 +498,101 @@ window.__ModuleLoader__.load({
           : brain
             ? t('A brain is a read-only CLI tier: it reads this folder and answers, and cannot edit files or run commands.')
             : t('Added to the first free slot; drag it into place afterwards.')),
-        h('div', { style: s.row },
-          brain
-            ? h('select', {
-              style: s.input,
-              value: driver,
-              onChange: (event) => {
-                const next = event.target.value
-                setDriver(next)
-                // Keep the model valid for the driver that was just picked.
-                setModel(choicesFor(next)[0]?.id ?? '')
-              },
-            },
-            ...(brainDrivers.length > 0 ? brainDrivers : drivers)
-              .map((name) => h('option', { key: name, value: name }, name)))
-            : h('select', { style: s.input, value: kind, onChange: (event) => setKind(event.target.value) },
+        brain
+          ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+            h('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' } },
+              h('label', { style: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: color.muted } },
+                t('Driver'),
+                h('select', {
+                  style: { ...s.input, width: 130 },
+                  value: driver,
+                  onChange: (event) => {
+                    const next = event.target.value
+                    setDriver(next)
+                    setModel(choicesFor(next)[0]?.id ?? '')
+                  },
+                },
+                ...(brainDrivers.length > 0 ? brainDrivers : drivers)
+                  .map((name) => h('option', { key: name, value: name }, name)))),
+              h('label', { style: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: color.muted } },
+                t('Model'),
+                modelChoices.length > 0
+                  ? h('select', {
+                    style: { ...s.input, width: 220 },
+                    value: model,
+                    onChange: (event) => setModel(event.target.value),
+                  },
+                  h('option', { value: '' }, t('CLI default')),
+                  ...modelChoices.map((entry) => h('option', {
+                    key: entry.id,
+                    value: entry.id,
+                    title: entry.note ?? '',
+                  }, `${entry.label}（${entry.id}）`)))
+                  : h('input', {
+                    style: { ...s.input, width: 220 },
+                    placeholder: t('model (blank = CLI default)'),
+                    'aria-label': t('Model'),
+                    value: model,
+                    onChange: (event) => setModel(event.target.value),
+                  })),
+              effortChoices.length > 0
+                ? h('label', { style: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: color.muted } },
+                  t('Effort'),
+                  h('select', {
+                    style: { ...s.input, width: 130 },
+                    value: effort,
+                    title: t('Faster ↔ Smarter'),
+                    onChange: (event) => setEffort(event.target.value),
+                  },
+                  h('option', { value: '' }, t('model default')),
+                  ...effortChoices.map((level) => h('option', { key: level, value: level }, level))))
+                : null),
+            h('label', { style: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: color.muted } },
+              t('Name'),
+              h('input', {
+                style: { ...s.input, maxWidth: 380 },
+                placeholder: t('name'),
+                value: label,
+                onChange: (event) => setLabel(event.target.value),
+              })),
+            h('div', { style: { display: 'flex', justifyContent: 'flex-end' } },
+              h('button', { type: 'button', style: disabled ? { ...s.btnPrimary, opacity: 0.4 } : s.btnPrimary, onClick: submit, disabled }, t('Add'))))
+          : h('div', { style: s.row },
+            h('select', { style: s.input, value: kind, onChange: (event) => setKind(event.target.value) },
               h('option', { value: 'llm' }, 'llm'),
               h('option', { value: 'cli' }, 'cli')),
-          brain
-            ? null
-            : kind === 'cli'
+            kind === 'cli'
               ? h('select', { style: s.input, value: driver, onChange: (event) => setDriver(event.target.value) },
                 ...drivers.map((name) => h('option', { key: name, value: name }, name)))
               : h('input', {
                 style: { ...s.input, width: 150 },
                 placeholder: t('provider'),
+                'aria-label': t('provider'),
                 value: provider,
                 onChange: (event) => setProvider(event.target.value),
               }),
-          brain && modelChoices.length > 0
-            ? h('select', {
+            h('input', {
               style: { ...s.input, width: 150 },
-              value: model,
-              onChange: (event) => setModel(event.target.value),
-            },
-            h('option', { value: '' }, t('CLI default')),
-            ...modelChoices.map((entry) => h('option', {
-              key: entry.id,
-              value: entry.id,
-              title: entry.note ?? '',
-            }, `${entry.label}（${entry.id}）`)))
-            : h('input', {
-              style: { ...s.input, width: 150 },
-              placeholder: brain ? t('model (blank = CLI default)') : t('model'),
+              placeholder: t('model'),
+              'aria-label': t('model'),
               value: model,
               onChange: (event) => setModel(event.target.value),
             }),
-          brain
-            ? effortChoices.length > 0
-              ? h('select', {
-                style: { ...s.input, width: 120 },
-                value: effort,
-                title: t('Faster ↔ Smarter'),
-                onChange: (event) => setEffort(event.target.value),
-              },
-              h('option', { value: '' }, t('model default')),
-              ...effortChoices.map((level) => h('option', { key: level, value: level }, level)))
-              : null
-            : h('input', {
+            h('input', {
               style: { ...s.input, width: 100 },
               placeholder: t('effort'),
+              'aria-label': t('effort'),
               value: effort,
               onChange: (event) => setEffort(event.target.value),
             }),
-          h('input', {
-            style: { ...s.input, flex: 1, minWidth: 160 },
-            placeholder: t('label'),
-            value: label,
-            onChange: (event) => setLabel(event.target.value),
-          }),
-          h('button', { style: disabled ? { ...s.btnPrimary, opacity: 0.4 } : s.btnPrimary, onClick: submit, disabled }, t('Add'))),
+            h('input', {
+              style: { ...s.input, flex: 1, minWidth: 160 },
+              placeholder: t('label'),
+              'aria-label': t('label'),
+              value: label,
+              onChange: (event) => setLabel(event.target.value),
+            }),
+            h('button', { type: 'button', style: disabled ? { ...s.btnPrimary, opacity: 0.4 } : s.btnPrimary, onClick: submit, disabled }, t('Add'))),
         error ? h('div', { style: s.error }, error) : null)
     }
 
@@ -679,21 +704,29 @@ window.__ModuleLoader__.load({
       // under them as its own line. Inline hints wrap badly and make the card
       // look ragged.
       const control = { ...s.input, width: 190 }
-      const field = (label, widget, hint) => h('div', {
-        style: {
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 5,
-          padding: '9px 0',
-          borderTop: `1px solid ${color.border}`,
+      const field = (label, widget, hint) => {
+        // A real label names the control; a button is not a labelable element,
+        // so it gets a group with the same accessible name instead.
+        const ctl = widget?.type
+        const rowStyle = { display: 'flex', alignItems: 'center', gap: 10 }
+        const text = h('span', { style: { fontSize: 12.5, minWidth: 76, color: color.text } }, label)
+        const body = ctl === 'select' || ctl === 'input'
+          ? h('label', { style: rowStyle }, text, widget)
+          : h('div', { role: 'group', 'aria-label': label, style: rowStyle }, text, widget)
+        return h('div', {
+          style: {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 5,
+            padding: '9px 0',
+            borderTop: `1px solid ${color.border}`,
+          },
         },
-      },
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
-        h('span', { style: { fontSize: 12.5, minWidth: 76, color: color.text } }, label),
-        widget),
-      hint
-        ? h('div', { style: { fontSize: 11.5, lineHeight: '17px', color: color.muted, paddingLeft: 86 } }, hint)
-        : null)
+        body,
+        hint
+          ? h('div', { style: { fontSize: 11.5, lineHeight: '17px', color: color.muted, paddingLeft: 86 } }, hint)
+          : null)
+      }
 
       return h('div', { style: s.card },
         h('div', { style: s.sectionTitle }, t('Policy')),
@@ -1232,6 +1265,10 @@ window.__ModuleLoader__.load({
       'CLI not found': '找不到这个 CLI',
       'tags, comma separated': '标签，用逗号分隔',
       'name': '名字',
+      'Driver': '驱动',
+      'Model': '模型',
+      'Effort': '推理强度',
+      'provider': '提供方',
       'Ask one with `supa_brain { needs: [...], brief: "..." }`; the answer lands in `supa_inbox`.':
         '用 `supa_brain { needs: [...], brief: "..." }` 问它；答案会进 `supa_inbox`。',
       'Mode': '模式',
