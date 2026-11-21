@@ -2318,6 +2318,11 @@ export function apply(ctx, config) {
           type: 'string',
           description: 'For `add` with kind `cli`: executable path or name overriding the driver default.',
         },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'For `add`: capabilities this tier is good at (`review`, `second-brain`, `long-context`, `bulk-edit`). `supa_spawn` matches them with `needs`.',
+        },
         provider: { type: 'string', description: 'For `add`: llm provider id.' },
         model: { type: 'string', description: 'For `add`: model id within that provider.' },
         reasoning_effort: { type: 'string', description: 'For `add`: thinking level, such as max or high. Omit for the route default.' },
