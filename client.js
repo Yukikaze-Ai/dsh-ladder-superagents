@@ -460,7 +460,9 @@ window.__ModuleLoader__.load({
             action: 'add',
             tier: brain
               ? {
-                label: label || `Brain (${driver}${model ? ` ${model}` : ''})`,
+                label: label || [declared?.[driver]?.label ?? driver,
+                  choicesFor(driver).find((entry) => entry.id === model)?.label ?? model]
+                  .filter(Boolean).join(' · '),
                 kind: 'cli',
                 driver,
                 model: model || undefined,
@@ -575,6 +577,7 @@ window.__ModuleLoader__.load({
      */
     function BrainRow({ tier, declared, busy, onAction, color, s, t }) {
       const [editing, setEditing] = useState(false)
+      const [name, setName] = useState(tier.label ?? '')
       const [model, setModel] = useState(tier.model ?? '')
       const [effort, setEffort] = useState(tier.reasoningEffort ?? '')
       const [tags, setTags] = useState((tier.tags ?? []).join(', '))
@@ -587,6 +590,7 @@ window.__ModuleLoader__.load({
         action: 'update',
         id: tier.id,
         tier: {
+          label: name.trim() || tier.label,
           model,
           reasoningEffort: effort,
           tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean),
@@ -632,24 +636,32 @@ window.__ModuleLoader__.load({
           title: t('Remove this brain'),
         }, t('Remove'))),
       editing
-        ? h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', paddingLeft: 17 } },
-          models.length > 0
-            ? h('select', { style: { ...s.input, width: 170 }, value: model, onChange: (event) => setModel(event.target.value) },
-              h('option', { value: '' }, t('CLI default')),
-              ...models.map((entry) => h('option', { key: entry.id, value: entry.id }, `${entry.label ?? entry.id}（${entry.id}）`)))
-            : h('input', { style: { ...s.input, width: 170 }, value: model, placeholder: t('model'), onChange: (event) => setModel(event.target.value) }),
-          efforts.length > 0
-            ? h('select', { style: { ...s.input, width: 110 }, value: effort, onChange: (event) => setEffort(event.target.value) },
-              h('option', { value: '' }, t('model default')),
-              ...efforts.map((level) => h('option', { key: level, value: level }, level)))
-            : null,
-          h('input', {
-            style: { ...s.input, flex: 1, minWidth: 190 },
-            value: tags,
-            placeholder: t('tags, comma separated'),
-            onChange: (event) => setTags(event.target.value),
-          }),
-          h('button', { style: s.btnPrimary, disabled: busy, onClick: save }, t('Save')))
+        ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 17 } },
+          h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
+            h('input', {
+              style: { ...s.input, width: 170 },
+              value: name,
+              placeholder: t('name'),
+              onChange: (event) => setName(event.target.value),
+            }),
+            models.length > 0
+              ? h('select', { style: { ...s.input, width: 190 }, value: model, onChange: (event) => setModel(event.target.value) },
+                h('option', { value: '' }, t('CLI default')),
+                ...models.map((entry) => h('option', { key: entry.id, value: entry.id }, `${entry.label ?? entry.id}（${entry.id}）`)))
+              : h('input', { style: { ...s.input, width: 190 }, value: model, placeholder: t('model'), onChange: (event) => setModel(event.target.value) }),
+            efforts.length > 0
+              ? h('select', { style: { ...s.input, width: 120 }, value: effort, onChange: (event) => setEffort(event.target.value) },
+                h('option', { value: '' }, t('model default')),
+                ...efforts.map((level) => h('option', { key: level, value: level }, level)))
+              : null),
+          h('div', { style: { display: 'flex', gap: 6, alignItems: 'center' } },
+            h('input', {
+              style: { ...s.input, flex: 1, minWidth: 190 },
+              value: tags,
+              placeholder: t('tags, comma separated'),
+              onChange: (event) => setTags(event.target.value),
+            }),
+            h('button', { style: s.btnPrimary, disabled: busy, onClick: save }, t('Save'))))
         : null)
     }
 
@@ -1216,6 +1228,7 @@ window.__ModuleLoader__.load({
       'unavailable': '不可用',
       'CLI not found': '找不到这个 CLI',
       'tags, comma separated': '标签，用逗号分隔',
+      'name': '名字',
       'Ask one with `supa_brain { needs: [...], brief: "..." }`; the answer lands in `supa_inbox`.':
         '用 `supa_brain { needs: [...], brief: "..." }` 问它；答案会进 `supa_inbox`。',
       'Mode': '模式',
