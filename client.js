@@ -449,6 +449,9 @@ window.__ModuleLoader__.load({
       // Claude exposes a five-step effort ladder; catalog.json says which
       // drivers have one, so no other driver grows a dead control.
       const effortChoices = brain ? (declared?.[driver]?.efforts ?? []) : []
+      // Only drivers that can enforce read-only may be a brain; the rest would
+      // be a brain with hands.
+      const brainDrivers = drivers.filter((name) => declared?.[name]?.readonlySupported === true)
 
       const submit = async () => {
         setError('')
@@ -505,7 +508,8 @@ window.__ModuleLoader__.load({
                 setModel(choicesFor(next)[0]?.id ?? '')
               },
             },
-            ...drivers.map((name) => h('option', { key: name, value: name }, name)))
+            ...(brainDrivers.length > 0 ? brainDrivers : drivers)
+              .map((name) => h('option', { key: name, value: name }, name)))
             : h('select', { style: s.input, value: kind, onChange: (event) => setKind(event.target.value) },
               h('option', { value: 'llm' }, 'llm'),
               h('option', { value: 'cli' }, 'cli')),

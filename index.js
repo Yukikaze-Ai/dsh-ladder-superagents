@@ -1354,6 +1354,7 @@ export const DRIVER_CATALOG = {
     "label": "Claude Code",
     "source": "declared",
     "resume": true,
+    "readonlySupported": true,
     "models": [
       {
         "id": "opus",
@@ -1450,6 +1451,7 @@ export const DRIVER_CATALOG = {
     "label": "Codex CLI",
     "source": "discovered",
     "resume": true,
+    "readonlySupported": true,
     "models": []
   },
   "gemini": {
@@ -1507,7 +1509,9 @@ export const CLI_DRIVERS = {
     label: 'OpenAI Codex CLI',
     bin: (cfg) => findCodex(cfg),
     prompt: 'stdin',
-    args: ({ cfg, model, effort, cwd, outFile }) => {
+    // Codex has its own sandbox switch, so a brain is read-only for real.
+    enforcesReadonly: true,
+    args: ({ cfg, model, effort, cwd, outFile, readonly }) => {
       const args = ['exec']
       if (cfg.codexEphemeral) args.push('--ephemeral')
       args.push('--skip-git-repo-check', '-C', cwd, '--color', 'never', '-o', outFile)
@@ -1515,7 +1519,7 @@ export const CLI_DRIVERS = {
       args.push('--json')
       if (model) args.push('-m', model)
       if (effort) args.push('-c', `model_reasoning_effort=${effort}`)
-      args.push('-s', 'workspace-write', '-')
+      args.push('-s', readonly ? 'read-only' : 'workspace-write', '-')
       return args
     },
   },
@@ -1532,6 +1536,8 @@ export const CLI_DRIVERS = {
     // Claude Code can continue a previous conversation and names the session id
     // in its JSON result, which is what makes a persistent reviewer possible.
     resume: true,
+    // Plan mode plus a read-tool allowlist: read-only is enforced, not asked.
+    enforcesReadonly: true,
     args: ({ model, effort, authority, sessionId, json, readonly }) => [
       '-p', '--output-format', json === false ? 'text' : 'json',
       ...(sessionId ? ['--resume', sessionId] : []),
@@ -3966,6 +3972,11 @@ export function apply(ctx, config) {
         const driverName = driverOf(tier)
         const driver = cliDriverFor(tier)
         if (!driver) throw new Error(`unknown CLI driver "${driverName}"; known: ${Object.keys(CLI_DRIVERS).join(', ')}`)
+        // A brain whose driver cannot enforce read-only would be a brain with
+        // hands. Refuse the run instead of quietly granting write access.
+        if (tier.readonly === true && driver.enforcesReadonly !== true) {
+          throw new Error(`${driverName} cannot enforce read-only, so it cannot be a brain; use claude or codex, or remove \`readonly\` from this tier`)
+        }
         const cliId = `${driverName}-${randomUUID().slice(0, 8)}`
         const outFile = join(tmpdir(), `supa-${cliId}.txt`)
         const command = resolveOnPath(cliCommandFor(tier, cfg))
