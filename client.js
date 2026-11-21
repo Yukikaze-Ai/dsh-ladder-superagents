@@ -516,7 +516,7 @@ window.__ModuleLoader__.load({
         error ? h('div', { style: s.error }, error) : null)
     }
 
-    function Policy({ config, busy, onConfig }) {
+    function Policy({ config, busy, onConfig, profile }) {
       const [minutes, setMinutes] = useState('')
       const [children, setChildren] = useState('')
       useEffect(() => {
@@ -571,7 +571,9 @@ window.__ModuleLoader__.load({
           h('option', { value: 'root' }, t('root sessions only')),
           h('option', { value: 'preset' }, t('by preset'))),
           t('Which sessions run as SupA; opt-in needs supa_session enable once per session')),
-        field(t('Approvals'),
+        // Everything below configures workers. EB mode has none: the harness
+        // owns its subagents, so these knobs would do nothing here.
+        ...(profile === 'eb' ? [] : [field(t('Approvals'),
           h('button', {
             style: s.btn,
             disabled: busy,
@@ -635,7 +637,7 @@ window.__ModuleLoader__.load({
             disabled: busy,
             onClick: () => onConfig({ denyBlockingQuestions: !config.denyBlockingQuestions }),
           }, config.denyBlockingQuestions ? t('refused') : t('allowed')),
-          t('whether ask_user_question may pop the option dialog')),
+          t('whether ask_user_question may pop the option dialog')),])
       )
     }
 
@@ -710,8 +712,12 @@ window.__ModuleLoader__.load({
       const summary = useMemo(() => {
         if (!state) return ''
         const usable = tiers.filter((tier) => tier.available && tier.enabled && !tier.failure).length
+        if (profile === 'eb') {
+          // No slots, no authority: what matters here is how many brains answer.
+          return `${brains.length} ${t('brains')} · ${brains.filter((tier) => tier.available && tier.enabled).length} ${t('usable')}`
+        }
         return `${usable}/${tiers.length} ${t('usable')} · ${tiers.length}/10 ${t('tiers')} · ${t('autoApprove')} ${String(state.config.autoApprove)} · ${t('authority')} ${state.config.authority}`
-      }, [state, tiers, language])
+      }, [state, tiers, brains, profile, language])
 
       if (error && !state) {
         return h('div', { style: s.page }, h('div', { style: s.error }, `dsh-ladder-superagents: ${error}`))
@@ -815,35 +821,41 @@ window.__ModuleLoader__.load({
               h('div', { style: s.body }, h('div', { style: s.meta }, t('empty slot — drag a tier here'))))
           })),
 
-        h(Policy, { config: state.config, busy, onConfig: configure }),
+        h(Policy, { config: state.config, busy, onConfig: configure, profile }),
 
-        state.failures?.length
-          ? h('div', { style: s.card },
-            h('div', { style: s.sectionTitle }, t('Failed routes')),
-            h('div', { style: s.hint }, 'A tier that failed in real use is removed from the ladder and its route is marked red in the catalog. Clear the mark once the problem is fixed.'),
-            ...state.failures.map((failure) => h('div', {
-              key: failure.key,
-              style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
-            },
-            h('span', { style: { color: color.bad, fontSize: 12 } }, '✕'),
-            h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, failure.label ?? failure.route),
-            h('span', { style: { ...s.meta, flex: 1 } }, `${failure.route} · ${String(failure.error).slice(0, 120)}`),
-            h('button', { style: s.btn, onClick: () => act({ action: 'clear', key: failure.key }) }, 'Clear'))))
-          : null,
+        // Failures, the codex catalog and the harness routes all exist to build
+        // and debug a worker ladder. EB mode has no ladder, so none of them.
+        profile === 'eb'
+          ? null
+          : state.failures?.length
+            ? h('div', { style: s.card },
+              h('div', { style: s.sectionTitle }, t('Failed routes')),
+              h('div', { style: s.hint }, 'A tier that failed in real use is removed from the ladder and its route is marked red in the catalog. Clear the mark once the problem is fixed.'),
+              ...state.failures.map((failure) => h('div', {
+                key: failure.key,
+                style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' },
+              },
+              h('span', { style: { color: color.bad, fontSize: 12 } }, '✕'),
+              h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, failure.label ?? failure.route),
+              h('span', { style: { ...s.meta, flex: 1 } }, `${failure.route} · ${String(failure.error).slice(0, 120)}`),
+              h('button', { style: s.btn, onClick: () => act({ action: 'clear', key: failure.key }) }, 'Clear'))))
+            : null,
 
-        h(Catalog, {
-          catalog: state.catalog,
-          declared: state.declared,
-          profile,
-          llm: state.llm,
-          failures: state.failures,
-          busy,
-          onScan: act,
-          onPin: act,
-          onAdd: act,
-          canPinTiers: tiers.some((tier) => (tier.kind === 'cli' || tier.kind === 'codex') && tier.model),
-        }),
-        manualOpen
+        profile === 'eb'
+          ? null
+          : h(Catalog, {
+            catalog: state.catalog,
+            declared: state.declared,
+            profile,
+            llm: state.llm,
+            failures: state.failures,
+            busy,
+            onScan: act,
+            onPin: act,
+            onAdd: act,
+            canPinTiers: tiers.some((tier) => (tier.kind === 'cli' || tier.kind === 'codex') && tier.model),
+          }),
+        manualOpen || profile === 'eb'
           ? h(AddForm, { drivers: state.drivers, onAdd: act, disabled: profile !== 'eb' && tiers.length >= 10, brain: profile === 'eb' })
           : h('button', {
             style: { ...s.btn, alignSelf: 'flex-start' },
