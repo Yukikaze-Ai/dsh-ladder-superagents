@@ -1871,12 +1871,14 @@ window.__ModuleLoader__.load({
           label: 'SupA',
         }, SupaSessionToggle))
 
-        // The usage view beside 对话 / 轨迹 / 上下文 / 编队.
+        // The plugin's own panel beside 对话 / 轨迹 / 上下文 / 编队. It holds both
+        // usage and this session's settings, so the label is the product name
+        // rather than "Stats", which would only describe half of it.
         ctx.slots.inject('conversation.view', () => ctx.slots.register({
           name: 'conversation.view',
           id: 'supa-stats',
           order: 40,
-          label: activeLang === 'zh' ? '统计' : 'Stats',
+          label: 'SupA',
         }, SupaStatsView))
       },
     }
