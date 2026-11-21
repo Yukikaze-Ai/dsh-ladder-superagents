@@ -4209,12 +4209,14 @@ export function apply(ctx, config) {
         }
         if (ids.length === 0) throw new Error('every brain in the panel failed to start; check the CLI paths with `supa_models list`')
         sections.push(`panel: ${panelTiers.length}`)
+        routed = panelTiers.map((entry) => entry.label).join(' + ')
         return {
           kind: 'cli',
           subagentId: '',
           cliId: ids.join(', '),
           packBytes: pack.length,
           sections: `panel (${panelTiers.length})`,
+          model: routed,
         }
       }
 
