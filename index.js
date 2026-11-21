@@ -277,6 +277,79 @@ function stateDirOf() {
   return join(homedir(), '.dsh', 'supa')
 }
 
+// ------------------------------------------------------- CLI session continuity
+//
+// A CLI tier is a one-shot process, so the only memory it can have is the one
+// the CLI itself keeps. Claude Code names its conversation in the JSON result
+// and continues it with `--resume`; remembering that id next to the workspace
+// turns a stateless reviewer into a running second brain.
+
+/** The usable text and session id in a `claude -p --output-format json` reply. */
+export function parseCliJson(stdout) {
+  const text = String(stdout ?? '').trim()
+  if (!text) return { text: '', sessionId: '' }
+  // The reply is one object, but a chatty CLI may print a line or two first.
+  for (const line of text.split('\n').reverse()) {
+    const candidate = line.trim()
+    if (!candidate.startsWith('{')) continue
+    try {
+      const parsed = JSON.parse(candidate)
+      if (!parsed || typeof parsed !== 'object') continue
+      const answer = typeof parsed.result === 'string'
+        ? parsed.result
+        : (typeof parsed.text === 'string' ? parsed.text : '')
+      const sessionId = typeof parsed.session_id === 'string' ? parsed.session_id : ''
+      if (answer || sessionId) return { text: answer || text, sessionId }
+    } catch {
+      // not the JSON line
+    }
+  }
+  return { text, sessionId: '' }
+}
+
+/** The key a CLI conversation is remembered under: one per driver and folder. */
+export function cliSessionKey(driver, cwd) {
+  let folder = ''
+  try {
+    folder = resolve(String(cwd || process.cwd()))
+  } catch {
+    folder = String(cwd || '')
+  }
+  return `${String(driver)}|${folder}`
+}
+
+let cliSessionCache = null
+
+/** One in-flight chain per conversation, so two runs never resume at once. */
+const cliChains = new Map()
+
+function cliSessionsFile() {
+  return join(stateDirOf(), 'cli-sessions.json')
+}
+
+function readCliSessions() {
+  if (cliSessionCache) return cliSessionCache
+  try {
+    const parsed = JSON.parse(readFileSync(cliSessionsFile(), 'utf8'))
+    cliSessionCache = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    cliSessionCache = {}
+  }
+  return cliSessionCache
+}
+
+async function rememberCliSession(key, sessionId) {
+  if (!key || !sessionId) return
+  const all = { ...readCliSessions(), [key]: { sessionId, at: Date.now() } }
+  cliSessionCache = all
+  try {
+    await mkdir(stateDirOf(), { recursive: true })
+    await writeTextAtomic(cliSessionsFile(), `${JSON.stringify(all, null, 2)}\n`)
+  } catch {
+    // an unwritable state directory only costs continuity, never the run
+  }
+}
+
 function modelsFileOf() {
   return join(stateDirOf(), 'models.json')
 }
@@ -1211,7 +1284,18 @@ export function quoteForShell(arg) {
  * needs. `prompt: 'stdin'` avoids the Windows command-line length limit; the
  * others take the prompt as an argument.
  */
-const CLI_DRIVERS = {
+/**
+ * Claude Code answers with a chat reply when asked for a model list, so there is
+ * nothing to discover — only aliases it accepts on `--model`. `declared` says
+ * so in the UI instead of pretending this was scanned.
+ */
+export const CLAUDE_MODELS = [
+  { id: 'opus', label: 'Opus' },
+  { id: 'sonnet', label: 'Sonnet' },
+  { id: 'haiku', label: 'Haiku' },
+]
+
+export const CLI_DRIVERS = {
   codex: {
     label: 'OpenAI Codex CLI',
     bin: (cfg) => findCodex(cfg),
@@ -1238,8 +1322,12 @@ const CLI_DRIVERS = {
     label: 'Claude Code',
     bin: (cfg) => cfg.claudeCommand || 'claude',
     prompt: 'stdin',
-    args: ({ model, effort, authority }) => [
-      '-p', '--output-format', 'text',
+    // Claude Code can continue a previous conversation and names the session id
+    // in its JSON result, which is what makes a persistent reviewer possible.
+    resume: true,
+    args: ({ model, effort, authority, sessionId, json }) => [
+      '-p', '--output-format', json === false ? 'text' : 'json',
+      ...(sessionId ? ['--resume', sessionId] : []),
       ...(model ? ['--model', model] : []),
       // Claude Code names its levels low|medium|high|xhigh|max; a tier's own
       // effort passes through only when it is one of those.
@@ -2643,6 +2731,9 @@ export function apply(ctx, config) {
       llm: await collectLlmRoutes(),
       drivers: Object.keys(CLI_DRIVERS),
       catalog,
+      // Claude Code has no machine-readable model list; these are the aliases
+      // it accepts, shown as declared rather than scanned.
+      declared: { claude: CLAUDE_MODELS },
       config: {
         mode: cfg.mode,
         autoApprove: cfg.autoApprove === true,
@@ -3311,6 +3402,10 @@ export function apply(ctx, config) {
           type: 'string',
           description: 'Id of a team task on the shared board. The worker reads it with team_task_get, claims it, does the work, and marks it complete before reporting.',
         },
+        fresh: {
+          type: 'boolean',
+          description: 'For a CLI tier that keeps a conversation (claude): start a new one instead of resuming the session this workspace last used.',
+        },
       },
       required: ['brief'],
     },
@@ -3430,6 +3525,9 @@ export function apply(ctx, config) {
       // and let it claim and complete the task instead of reporting status up.
       const teamTask = typeof args.task === 'string' ? args.task.trim() : ''
       const teamReady = teamTask ? (ctx.get?.('agentTeams')?.isEnabled?.(agent) ?? false) : false
+      // An external CLI has none of our tools, so asking it to call
+      // `supa_report` would only make it apologise; its stdout is the report.
+      const cliTarget = Boolean(choseTier && isCliTier(choseTier))
       if (teamTask && teamReady) {
         parts.push([
           '## Work item',
@@ -3438,7 +3536,9 @@ export function apply(ctx, config) {
           '2. Claim it with `team_task_update`: action "claim", expected_revision from that read.',
           '3. Do the work.',
           '4. Mark it complete with `team_task_update`: action "complete", the latest revision.',
-          'Then report the result to your parent with `supa_report`.',
+          cliTarget
+            ? 'Then reply with your final answer; it is returned to the parent as the result.'
+            : 'Then report the result to your parent with `supa_report`.',
         ].join('\n'))
       }
       parts.push('## Brief\n' + String(args.brief))
@@ -3604,7 +3704,11 @@ export function apply(ctx, config) {
         const outFile = join(tmpdir(), `supa-${cliId}.txt`)
         const command = resolveOnPath(cliCommandFor(tier, cfg))
         if (!command) throw new Error(`${driverName} CLI not found; set command on the tier or install it`)
-        const args = driver.args({
+        const wantsJson = driver.resume === true
+        const sessionKey = cliSessionKey(driverName, cwd)
+        const stored = wantsJson ? readCliSessions()[sessionKey]?.sessionId ?? '' : ''
+        const sessionId = wantsJson && args.fresh !== true && stored ? stored : ''
+        const baseArgs = driver.args({
           cfg,
           model: tier.model,
           effort: tier.reasoningEffort,
@@ -3612,50 +3716,65 @@ export function apply(ctx, config) {
           outFile,
           prompt: pack,
           authority,
+          sessionId,
+          json: wantsJson,
         })
 
-        // A Windows npm shim is a .cmd, which spawn cannot execute directly;
-        // everywhere else the binary is executed as-is, with its own shebang.
-        const shell = needsShell(command)
-        const child = spawnCli(command, shell ? args.map(quoteForShell) : args, { cwd, shell })
-        let stdout = ''
-        let stderr = ''
-        child.stdout.on('data', (chunk) => { stdout = `${stdout}${chunk}`.slice(-4000) })
-        child.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-2000) })
-        const timer = setTimeout(() => {
-          // The CLI may have started helpers of its own; stop the group.
-          stopCli(child)
-        }, cfg.cliTimeoutMs)
-        child.stdin.on('error', () => {})
-        child.stdin.end(driver.prompt === 'stdin' ? pack : '')
+        // Two runs of one CLI conversation must not overlap: the second would
+        // resume a session the first is still writing.
+        const previous = cliChains.get(sessionKey) ?? Promise.resolve()
+        const mine = previous.then(() => runOnce(), () => runOnce())
+        cliChains.set(sessionKey, mine.catch(() => {}))
 
-        let settled = false
-        const result = new Promise((resolve, reject) => {
-          const finish = (fn, value) => {
-            if (settled) return
-            settled = true
-            clearTimeout(timer)
-            try {
-              unlinkSync(outFile)
-            } catch {
-              // temp file already gone
+        function runOnce() {
+          // A Windows npm shim is a .cmd, which spawn cannot execute directly;
+          // everywhere else the binary is executed as-is, with its own shebang.
+          const shell = needsShell(command)
+          const child = spawnCli(command, shell ? baseArgs.map(quoteForShell) : baseArgs, { cwd, shell })
+          let stdout = ''
+          let stderr = ''
+          child.stdout.on('data', (chunk) => { stdout = `${stdout}${chunk}`.slice(-8000) })
+          child.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-2000) })
+          const timer = setTimeout(() => {
+            // The CLI may have started helpers of its own; stop the group.
+            stopCli(child)
+          }, cfg.cliTimeoutMs)
+          child.stdin.on('error', () => {})
+          child.stdin.end(driver.prompt === 'stdin' ? pack : '')
+
+          let settled = false
+          return new Promise((resolve, reject) => {
+            const finish = (fn, value) => {
+              if (settled) return
+              settled = true
+              clearTimeout(timer)
+              try {
+                unlinkSync(outFile)
+              } catch {
+                // temp file already gone
+              }
+              fn(value)
             }
-            fn(value)
-          }
-          child.on('error', (error) => finish(reject, new Error(`${driverName} could not start: ${error.message}`)))
-          child.on('close', (code) => {
-            let text = ''
-            try {
-              text = readFileSync(outFile, 'utf8')
-            } catch {
-              // fall back to the stream
-            }
-            if (!text.trim()) text = stdout.trim() || stderr.trim()
-            if (code === 0 && text.trim()) return finish(resolve, text.trim())
-            const detail = tailOf(stderr, stdout, 400)
-            finish(reject, new Error(`${driverName} exited ${code}${detail ? `: ${detail}` : ''}`))
-          })
-        })
+            child.on('error', (error) => finish(reject, new Error(`${driverName} could not start: ${error.message}`)))
+            child.on('close', (code) => {
+              let text = ''
+              try {
+                text = readFileSync(outFile, 'utf8')
+              } catch {
+                // fall back to the stream
+              }
+              if (!text.trim()) text = stdout.trim() || stderr.trim()
+              if (wantsJson) {
+                const parsed = parseCliJson(stdout)
+                if (parsed.sessionId) rememberCliSession(sessionKey, parsed.sessionId).catch(() => {})
+                if (parsed.text) text = parsed.text
+              }
+              if (code === 0 && text.trim()) return finish(resolve, text.trim())
+              const detail = tailOf(stderr, stdout, 400)
+              finish(reject, new Error(`${driverName} exited ${code}${detail ? `: ${detail}` : ''}`))
+            })
+          }).then((text) => ({ text, raw: stdout }))
+        }
 
         const cliStartedAt = Date.now()
         recordUsage({
@@ -3669,8 +3788,9 @@ export function apply(ctx, config) {
           route: tierRoute(tier),
           attempt,
         })
-        result.then((text) => {
-          const tokens = tokensFromJsonl(stdout)
+        mine.then((outcome) => {
+          const { text, raw } = outcome
+          const tokens = tokensFromJsonl(raw)
           recordUsage({
             kind: 'done',
             child: cliId,

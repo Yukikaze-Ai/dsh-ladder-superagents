@@ -181,7 +181,7 @@ window.__ModuleLoader__.load({
         }, confirming ? t('Sure?') : '✕')))
     }
 
-    function Catalog({ catalog, llm, failures, busy, onScan, onPin, onAdd, canPinTiers }) {
+    function Catalog({ catalog, declared, llm, failures, busy, onScan, onPin, onAdd, canPinTiers }) {
       const [pending, setPending] = useState('')
       const [adding, setAdding] = useState('')
       const [verifiedOnly, setVerifiedOnly] = useState(false)
@@ -327,6 +327,31 @@ window.__ModuleLoader__.load({
                     : null)
               }))
             : h('div', { style: s.hint }, t('No catalog cached. Scan to read the model list.')),
+        declared?.claude?.length
+          ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 6 } },
+            h('div', { style: s.hint }, 'Claude Code — 声明的别名（该 CLI 没有可机读的模型列表，不是扫描结果）'),
+            ...declared.claude.map((model) => h('div', {
+              key: model.id,
+              style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'nowrap' },
+            },
+            h('span', { style: { fontSize: 12, minWidth: 210, color: color.text } }, `${model.label} (--model ${model.id})`),
+            h('span', { style: { ...s.meta, flex: 1 } }, ''),
+            h('button', {
+              style: s.btn,
+              disabled: busyNow,
+              title: `Add a claude tier pinned to ${model.id}`,
+              onClick: () => onAdd({
+                action: 'add',
+                tier: {
+                  label: `Claude Code (${model.label})`,
+                  kind: 'cli',
+                  driver: 'claude',
+                  model: model.id,
+                  tags: ['review', 'second-brain', 'long-context'],
+                },
+              }),
+            }, t('Add')))))
+          : null,
         llm?.length
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 6 } },
             h('div', { style: s.hint }, t('Harness routes (read live from the llm service)')),
@@ -740,6 +765,7 @@ window.__ModuleLoader__.load({
 
         h(Catalog, {
           catalog: state.catalog,
+          declared: state.declared,
           llm: state.llm,
           failures: state.failures,
           busy,
