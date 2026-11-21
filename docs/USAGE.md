@@ -26,7 +26,6 @@ SupA 不是"一个更强的模型"，是一套分派机制。四样东西各管�
 十个槽位，`T1` 最强。槽位就是难度上限：T1 覆盖 10，T7 覆盖 4。留下空洞没关系，空洞由上面更强的档接住。
 
 ### 2. 能力标签
-
 槽位决定"多难"，标签决定"适合什么"：
 
 ```jsonc
@@ -42,7 +41,25 @@ supa_spawn { needs: ["review"], difficulty: 6, brief: "..." }
 
 没有一档带这些标签时，会退回按难度选，并在 brief 里写明"没有 tier 声明 review"——**不会静默忽略**。
 
-### 3. Claude 的连续性
+### 3. 大脑档位（只能看，不能改）
+
+给 tier 加 `readonly: true`，它就成为"大脑"：读、想、review，但**不许改工作区**。
+
+```jsonc
+{ "id": "t6", "label": "Claude (brain)", "kind": "cli", "driver": "claude",
+  "model": "opus", "slot": 3, "readonly": true,
+  "tags": ["review", "second-brain", "long-context"] }
+```
+
+约束是**强制的**，不是提示词：
+
+- Claude 档位走 `--permission-mode plan`，并显式禁用 `Write` / `Edit` / `MultiEdit` / `NotebookEdit` / `Bash`；
+- 其它档位没有这种开关，规则写在 brief 开头的「Role: brain, not hands」里；
+- 实测：让它"创建 brain-probe.txt"，它拒绝，文件也确实没生成。
+
+想有第三、第四大脑，就再加几个带 `readonly` 的档位，用 `needs` 区分用途（例如 `["review"]` 和 `["architecture"]`）。
+
+### 4. Claude 的连续性
 
 Claude 档位支持 `--resume`：第一次调用记下会话 id，同一个文件夹下次自动续上。
 

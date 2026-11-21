@@ -21,6 +21,13 @@ match a capability instead of only a difficulty.
   `~/.dsh/supa/cli-sessions.json`, and passes `--resume` next time, so a
   reviewer accumulates context. `fresh: true` starts a new conversation;
   two runs of one conversation are serialised.
+- **Brain tiers (`readonly`).** A tier can be declared a brain: it reads, thinks
+  and reviews, and must not change the workspace. Claude enforces it with
+  `--permission-mode plan` plus a denial of `Write`/`Edit`/`MultiEdit`/
+  `NotebookEdit`/`Bash` — enforcement, not a prompt. Other tiers get the rule
+  stated in the brief. `supa_models add` takes `readonly: true` and the ladder
+  list marks such a tier `brain (read-only)`.
+
 - **The team board carries status.** `supa_spawn` takes `task`; the worker
   reads it, claims it with its revision, does the work and completes it, and
   the charter tells a SupA to read progress from `team_task_list`. The id is
@@ -278,4 +285,5 @@ First published version. Windows only.
   subscription and `kimi` needs a Kimi account; neither was run here.
 - No automated tests.
 - The settings routes do not authenticate their caller.
+
 

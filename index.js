@@ -1041,6 +1041,10 @@ function normalizeTier(raw, index) {
     // What this tier is good at beyond raw strength: `long-context`,
     // `bulk-edit`, `local-cli`, anything a spawn asks for with `needs`.
     tags: Array.isArray(tier.tags) ? tier.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 8) : [],
+    // A brain only reads and thinks: it must not change the workspace. For a
+    // CLI that can enforce this itself (Claude's plan mode) the flag is passed
+    // down; for everything else it is a contract stated in the brief.
+    readonly: tier.readonly === true || tier.role === 'brain',
     enabled: tier.enabled !== false,
   }
 }
@@ -1165,7 +1169,8 @@ function renumber(tiers) {
 
 function renderTier(tier, index) {
   const tags = Array.isArray(tier.tags) && tier.tags.length ? ` · [${tier.tags.join(', ')}]` : ''
-  return `T${tier.slot}. ${tier.id} ${tier.label} — ${tierRoute(tier)} · covers up to ${tier.ceiling}${tags}${tier.enabled ? '' : ' · disabled'}`
+  const brain = tier.readonly ? ' · brain (read-only)' : ''
+  return `T${tier.slot}. ${tier.id} ${tier.label} — ${tierRoute(tier)} · covers up to ${tier.ceiling}${tags}${brain}${tier.enabled ? '' : ' · disabled'}`
 }
 
 /**
@@ -1325,7 +1330,7 @@ export const CLI_DRIVERS = {
     // Claude Code can continue a previous conversation and names the session id
     // in its JSON result, which is what makes a persistent reviewer possible.
     resume: true,
-    args: ({ model, effort, authority, sessionId, json }) => [
+    args: ({ model, effort, authority, sessionId, json, readonly }) => [
       '-p', '--output-format', json === false ? 'text' : 'json',
       ...(sessionId ? ['--resume', sessionId] : []),
       ...(model ? ['--model', model] : []),
@@ -1334,11 +1339,15 @@ export const CLI_DRIVERS = {
       ...(['low', 'medium', 'high', 'xhigh', 'max'].includes(String(effort ?? ''))
         ? ['--effort', effort]
         : []),
-      // A SupA never waits for a human: either skip the checks (full) or make
-      // sure a permission prompt resolves to "no" instead of hanging stdout.
-      ...(authority === 'full'
-        ? ['--dangerously-skip-permissions']
-        : ['--permission-prompts', 'none']),
+      // A brain may only read: plan mode is Claude's own read-only mode, which
+      // is enforcement, not a request in the prompt.
+      ...(readonly
+        ? ['--permission-mode', 'plan', '--disallowedTools', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash']
+        : authority === 'full'
+          // A SupA never waits for a human: either skip the checks (full) or make
+          // sure a permission prompt resolves to "no" instead of hanging stdout.
+          ? ['--dangerously-skip-permissions']
+          : ['--permission-prompts', 'none']),
     ],
   },
   gemini: {
@@ -2411,6 +2420,10 @@ export function apply(ctx, config) {
           items: { type: 'string' },
           description: 'For `add`: capabilities this tier is good at (`review`, `second-brain`, `long-context`, `bulk-edit`). `supa_spawn` matches them with `needs`.',
         },
+        readonly: {
+          type: 'boolean',
+          description: 'For `add`: make this a brain — read, think and review only, never change the workspace. Claude enforces it with plan mode; other tiers are told in the brief.',
+        },
         provider: { type: 'string', description: 'For `add`: llm provider id.' },
         model: { type: 'string', description: 'For `add`: model id within that provider.' },
         reasoning_effort: { type: 'string', description: 'For `add`: thinking level, such as max or high. Omit for the route default.' },
@@ -2525,6 +2538,7 @@ export function apply(ctx, config) {
           model: args.model,
           reasoningEffort: args.reasoning_effort,
           tags: args.tags,
+          readonly: args.readonly === true,
           ceiling: args.ceiling,
           slot: args.rank === undefined ? freeSlot : Number(args.rank) + 1,
         }, freeSlot - 1)
@@ -3528,6 +3542,15 @@ export function apply(ctx, config) {
       // An external CLI has none of our tools, so asking it to call
       // `supa_report` would only make it apologise; its stdout is the report.
       const cliTarget = Boolean(choseTier && isCliTier(choseTier))
+      // A brain tier is read-only by contract. Claude enforces it with plan
+      // mode; every other tier gets it stated here.
+      if (choseTier?.readonly) {
+        parts.unshift([
+          '## Role: brain, not hands',
+          'You read, think and review. Do not modify files, do not run commands that change the workspace, and do not try to work around this restriction.',
+          'What is wanted from you: the thinking, the blind spot, the flaw, the review — as text (or a report file only if the brief explicitly asks for one).',
+        ].join('\n'))
+      }
       if (teamTask && teamReady) {
         parts.push([
           '## Work item',
@@ -3718,6 +3741,7 @@ export function apply(ctx, config) {
           authority,
           sessionId,
           json: wantsJson,
+          readonly: tier.readonly === true,
         })
 
         // Two runs of one CLI conversation must not overlap: the second would
