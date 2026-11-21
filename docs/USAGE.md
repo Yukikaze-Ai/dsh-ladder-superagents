@@ -17,6 +17,25 @@
 
 一句话：**普通模式是"我来编排"；EB 模式是"DSH 照常干活，我只是在旁边多放几个脑子"。**
 
+### 模式是按会话的
+
+配置里的「模式」只是**默认值**。任何一个会话可以单独钉住：
+
+```
+supa_session { action: "status", mode: "eb" }      // 这个会话用大脑
+supa_session { action: "status", mode: "normal" }  // 这个会话用阶梯
+supa_session { action: "status", mode: "default" } // 回到配置默认
+```
+
+设置页的「各会话的模式」卡片也能改。所以**同一个 profile 里，A 会话跑阶梯、B 会话跑大脑**是正常状态。
+
+钉住的会话，另一套工具会被明确拒绝，而不是静默不做：
+
+```
+supa_brain → Error: `supa_brain` is for EB sessions. This session runs the ladder:
+             use `supa_spawn`, or pin it with `supa_session { mode: "eb" }` first.
+```
+
 ---
 
 ## 一、先分清四样东西
