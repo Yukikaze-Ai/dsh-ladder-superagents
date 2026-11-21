@@ -526,6 +526,16 @@ window.__ModuleLoader__.load({
       return h('div', { style: s.card },
         h('div', { style: s.sectionTitle }, t('Policy')),
         h('div', { style: s.hint }, t('Saving rewrites this plugin row in the profile config, which restarts it for about a second.')),
+        field(t('Mode'),
+          h('select', {
+            style: control,
+            value: config.profile ?? 'ladder',
+            disabled: busy,
+            onChange: (event) => onConfig({ profile: event.target.value }),
+          },
+          h('option', { value: 'ladder' }, t('ladder (SupA spawns workers)')),
+          h('option', { value: 'brain' }, t('brain (native subagents + external brains)'))),
+          t('brain keeps the harness in charge of its own subagents and only adds read-only external brains')),
         field(t('Session scope'),
           h('select', {
             style: control,

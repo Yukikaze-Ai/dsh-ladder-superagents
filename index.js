@@ -32,6 +32,13 @@ export const inject = ['tools', 'systemPrompt']
 
 const DEFAULTS = {
   enabled: true,
+  /**
+   * What the plugin is for in this profile:
+   *   `ladder` — the full SupA: difficulty routing, harness workers, guards.
+   *   `brain`  — native DSH owns its subagents; the plugin only lends external
+   *              read-only brains (`supa_brain`), the shared ledger and the queue.
+   */
+  profile: 'ladder',
   /** 'all' | 'root' | 'preset' */
   mode: 'all',
   presets: [],
@@ -112,6 +119,23 @@ const DEFAULTS = {
   /** Parent inbound queue: how many lanes the prompt line names. */
   inboxPromptLanes: 4,
 }
+
+/**
+ * The brain charter: no delegation doctrine, because in this profile the
+ * harness owns its own subagents. The plugin only lends advisors.
+ */
+const BRAIN_CHARTER = [
+  '# SupA in brain mode',
+  'This session runs with native DeepSeek Harness subagents: spawn, steer and collect them with the harness\'s own tools (`subagent`, `subagent_fork`, `send_message`, `list_agents`). This plugin does not manage them and does not judge how you use them.',
+  '',
+  'What the plugin adds is **brains**: external models that read the same folder and answer with thinking, review and blind spots. Consult one with `supa_brain`.',
+  '',
+  '- A brain is read-only by contract. It cannot edit files or run commands; if something needs doing, you do it — the brain only tells you what it thinks.',
+  '- Hand a brain a **path**, not a pasted file: it can read the repository itself. `supa_brain { needs: ["review"], brief: "read docs/BRAIN.md and the working tree, write findings into your answer" }`.',
+  '- Brains keep conversations: the same folder resumes the same brain session. Pass `fresh: true` to start over.',
+  '- Results land in the queue. Read them with `supa_inbox`; a brain has no `supa_report` tool, its answer is the report.',
+  '- Use the ledger (`.dsh-supa/context.jsonl`) for what must survive: a decision a brain made, a finding you will need later. A brain\'s memory does not leave its own conversation.',
+].join('\n')
 
 const CHARTER = [
   '# SupA session charter',
@@ -1812,7 +1836,7 @@ export function apply(ctx, config) {
     'If a human decision is genuinely required and irreversible, write the question to the ledger and describe exactly what you need.',
   ].join(' ')
 
-  if (cfg.denyBlockingQuestions) {
+  if (cfg.denyBlockingQuestions && cfg.profile !== 'brain') {
     ctx.effect(() => ctx.tools.guard((execution) => {
       if (!execution || execution.name !== 'ask_user_question') return undefined
       if (!isSupa(execution.agent)) return undefined
@@ -1921,7 +1945,8 @@ export function apply(ctx, config) {
     return 'spawned'
   }
 
-  ctx.effect(() => ctx.tools.guard((execution) => {
+  // In brain mode the harness owns command execution: no hand-off, no advice.
+  if (cfg.profile !== 'brain') ctx.effect(() => ctx.tools.guard((execution) => {
     if (!execution || !isSupa(execution.agent)) return undefined
     if (execution.name !== 'pwsh' && execution.name !== 'bash') return undefined
     // A child exists to run the command. Handing off from a child would spawn a
@@ -1972,8 +1997,8 @@ export function apply(ctx, config) {
 
   // Children the platform starts with `subagent` never pass through the ladder,
   // so they are invisible to the stats. Count them instead of pretending the
-  // session did nothing.
-  ctx.effect(() => ctx.tools.guard((execution) => {
+  // session did nothing. Brain mode leaves the harness's subagents alone.
+  if (cfg.profile !== 'brain') ctx.effect(() => ctx.tools.guard((execution) => {
     const name = typeof execution?.name === 'string' ? execution.name : ''
     if (name !== 'subagent' && name !== 'subagent_fork') return undefined
     const agent = execution.agent
@@ -2269,7 +2294,10 @@ export function apply(ctx, config) {
   ctx.systemPrompt.section({
     name: 'supa:charter',
     order: sectionOrder,
-    text: (context) => (context?.agent && isSupa(context.agent) ? CHARTER : ''),
+    text: (context) => {
+      if (!context?.agent || !isSupa(context.agent)) return ''
+      return cfg.profile === 'brain' ? BRAIN_CHARTER : CHARTER
+    },
   })
 
   ctx.systemPrompt.context({
@@ -2750,6 +2778,7 @@ export function apply(ctx, config) {
       declared: { claude: CLAUDE_MODELS },
       config: {
         mode: cfg.mode,
+        profile: cfg.profile,
         autoApprove: cfg.autoApprove === true,
         authority: cfg.authority,
         retryOnFailure: cfg.retryOnFailure,
@@ -3506,6 +3535,13 @@ export function apply(ctx, config) {
       let routed = 'inherit'
       let choseTier = null
       let routeChain = []
+      const brainProfile = cfg.profile === 'brain'
+      // In brain mode the only thing this plugin may dispatch is an external
+      // CLI. Anything else is the harness's own business, so require a target
+      // instead of silently inheriting the parent's route.
+      if (brainProfile && args.difficulty === undefined && !args.route) {
+        throw new Error('brain mode dispatches only external brains: pass `needs` together with `difficulty`, or `route` a CLI tier. Harness subagents belong to the platform tools.')
+      }
       if (args.difficulty !== undefined || args.route) {
         const ladder = await readLadder(modelsFileOf(cwd, cfg))
         let tier = null
@@ -3518,7 +3554,16 @@ export function apply(ctx, config) {
           const needs = (Array.isArray(args.needs) ? args.needs : [])
             .map((need) => String(need ?? '').trim())
             .filter(Boolean)
-          const picked = await resolveRoute(ladder, Math.min(10, Math.max(1, Number(args.difficulty) || 5)), cwd, needs)
+          // In brain mode only CLI tiers are candidates: a harness tier would
+          // be a second delegation system, which is exactly what this mode
+          // avoids.
+          const pool = brainProfile
+            ? { ...ladder, tiers: ladder.tiers.filter((entry) => isCliTier(entry)) }
+            : ladder
+          if (brainProfile && pool.tiers.length === 0) {
+            throw new Error('brain mode needs at least one CLI tier in the ladder; add one with `supa_models add` (driver claude, readonly true)')
+          }
+          const picked = await resolveRoute(pool, Math.min(10, Math.max(1, Number(args.difficulty) || 5)), cwd, needs)
           tier = picked.tier
           routeChain = picked.chain
           if (needs.length > 0 && picked.needsMatched === false) {
@@ -4146,7 +4191,22 @@ export function apply(ctx, config) {
   }
 
   ctx.effect(() => {
-    const disposers = [contextTool, reportTool, inboxTool, modelsTool, spawnTool, requestTool, supplyTool, authorityTool, statusTool, stopTool]
+    // A brain is the same executor with a narrower remit: it may only dispatch
+    // an external CLI, never a harness child.
+    const brainTool = {
+      ...spawnTool,
+      name: 'supa_brain',
+      description: [
+        'Consult an external brain: a model outside this harness that reads the same folder and answers with thinking, review or a blind spot.',
+        'A brain is read-only (Claude runs in plan mode); it cannot edit files or run commands, so hand it a path and ask for its judgement, not for a change.',
+        'Pick one with `needs` (`review`, `second-brain`, `long-context`) or `route`; `difficulty` ranks it like any tier.',
+        'The answer lands in the queue: read it with `supa_inbox`. The same folder resumes the same brain conversation; `fresh: true` starts over.',
+      ].join(' '),
+    }
+
+    const disposers = cfg.profile === 'brain'
+      ? [contextTool, inboxTool, modelsTool, brainTool, statusTool]
+      : [contextTool, reportTool, inboxTool, modelsTool, spawnTool, requestTool, supplyTool, authorityTool, statusTool, stopTool]
       .map((definition) => ctx.tools.register(definition))
     return () => {
       for (const dispose of disposers.reverse()) {
