@@ -4215,7 +4215,6 @@ export function apply(ctx, config) {
           cliId: ids.join(', '),
           packBytes: pack.length,
           sections: `panel (${panelTiers.length})`,
-          tier: panelTiers.map((entry) => entry.id).join(','),
         }
       }
 
