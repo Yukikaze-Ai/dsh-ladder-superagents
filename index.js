@@ -1331,22 +1331,164 @@ export function quoteForShell(arg) {
  * so in the UI instead of pretending this was scanned.
  */
 /**
- * The known models per driver live in `catalog.json` next to this file, so a
- * new model is a data change, not a release. A driver with `source: declared`
- * has no machine-readable list (Claude answers a chat prompt); `discovered`
- * means the driver command reads the real thing.
+ * Known models per driver, baked in on purpose: a published plugin that read a
+ * side file would break on a missing file or a hand-edited one. Updating a model
+ * list is a release; a ladder tier in `models.json` stays user-editable, which
+ * is where an unsupported model belongs.
+ *
+ * `declared` means the CLI has no machine-readable list (Claude answers a chat
+ * prompt, not a catalog); `discovered` means a driver command reads the real
+ * list. Every id under claude was verified with a real `claude -p --model <id>`
+ * call on 2026-11-21; the labels come from Claude Code's own /model menu.
  */
-export function loadDriverCatalog() {
-  const fallback = { drivers: { claude: { label: 'Claude Code', source: 'declared', resume: true, models: [{ id: 'opus', label: 'Opus' }] } } }
-  try {
-    const file = new URL('./catalog.json', import.meta.url)
-    const parsed = JSON.parse(readFileSync(file, 'utf8'))
-    if (!parsed || typeof parsed !== 'object' || !parsed.drivers || typeof parsed.drivers !== 'object') return fallback
-    return parsed
-  } catch {
-    // A missing or broken catalog only costs the dropdown, never a run.
-    return fallback
+export const DRIVER_CATALOG = {
+  "claude": {
+    "label": "Claude Code",
+    "source": "declared",
+    "resume": true,
+    "models": [
+      {
+        "id": "opus",
+        "label": "Opus（别名）",
+        "note": "别名，跟着账号当前的 Opus"
+      },
+      {
+        "id": "sonnet",
+        "label": "Sonnet（别名）",
+        "note": "别名，跟着账号当前的 Sonnet"
+      },
+      {
+        "id": "haiku",
+        "label": "Haiku（别名）",
+        "note": "别名，跟着账号当前的 Haiku"
+      },
+      {
+        "id": "claude-opus-5-5",
+        "label": "Opus 5.5",
+        "note": "日常与复杂任务"
+      },
+      {
+        "id": "claude-sonnet-5-5",
+        "label": "Sonnet 5.5",
+        "note": "更简单的任务，最省"
+      },
+      {
+        "id": "claude-fable-5-2",
+        "label": "Fable 5.2",
+        "note": "最难的挑战"
+      },
+      {
+        "id": "claude-haiku-5-5",
+        "label": "Haiku 5.5",
+        "note": "快速回答"
+      },
+      {
+        "id": "claude-fable-5-1",
+        "label": "Fable 5.1",
+        "note": "最难、最长的任务"
+      },
+      {
+        "id": "claude-haiku-4-5",
+        "label": "Haiku 4.5",
+        "note": "快速回答"
+      },
+      {
+        "id": "claude-sonnet-5",
+        "label": "Sonnet 5",
+        "note": "日常任务，效率高"
+      },
+      {
+        "id": "claude-opus-5",
+        "label": "Opus 5",
+        "note": "日常与复杂任务"
+      },
+      {
+        "id": "claude-fable-5",
+        "label": "Fable 5",
+        "note": "最难、最长的任务"
+      },
+      {
+        "id": "claude-opus-4-8",
+        "label": "Opus 4.8",
+        "note": "日常与复杂任务"
+      },
+      {
+        "id": "claude-opus-4-7",
+        "label": "Opus 4.7",
+        "note": "日常与复杂任务"
+      },
+      {
+        "id": "claude-opus-4-6",
+        "label": "Opus 4.6",
+        "note": "日常与复杂任务"
+      },
+      {
+        "id": "claude-sonnet-4-6",
+        "label": "Sonnet 4.6",
+        "note": "日常任务，效率高"
+      }
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "defaultEffort": "medium",
+    "effortNote": "Faster ↔ Smarter; medium is the default for this model."
+  },
+  "codex": {
+    "label": "Codex CLI",
+    "source": "discovered",
+    "resume": true,
+    "models": []
+  },
+  "gemini": {
+    "label": "Gemini CLI",
+    "source": "unknown",
+    "models": []
+  },
+  "qwen": {
+    "label": "Qwen Code",
+    "source": "unknown",
+    "models": []
+  },
+  "cursor": {
+    "label": "Cursor Agent",
+    "source": "declared",
+    "models": []
+  },
+  "kimi": {
+    "label": "Kimi CLI",
+    "source": "declared",
+    "models": []
+  },
+  "opencode": {
+    "label": "OpenCode",
+    "source": "declared",
+    "models": []
+  },
+  "aider": {
+    "label": "Aider",
+    "source": "declared",
+    "models": []
+  },
+  "copilot": {
+    "label": "Copilot CLI",
+    "source": "declared",
+    "models": []
+  },
+  "goose": {
+    "label": "Goose",
+    "source": "declared",
+    "models": []
   }
+}
+
+export function loadDriverCatalog() {
+  // A copy, so a caller cannot mutate the constant through the return value.
+  return { drivers: JSON.parse(JSON.stringify(DRIVER_CATALOG)) }
 }
 
 export const CLAUDE_MODELS = (loadDriverCatalog().drivers?.claude?.models ?? [])
