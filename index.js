@@ -965,6 +965,9 @@ function normalizeTier(raw, index) {
     // The slot is the tier: T1 is the strongest and covers a 10-point task.
     slot,
     ceiling: ceilingOf(slot),
+    // What this tier is good at beyond raw strength: `long-context`,
+    // `bulk-edit`, `local-cli`, anything a spawn asks for with `needs`.
+    tags: Array.isArray(tier.tags) ? tier.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 8) : [],
     enabled: tier.enabled !== false,
   }
 }
@@ -1024,16 +1027,35 @@ export function ceilingOf(slot) {
  * first) and a difficulty, pick the tier and the fallback chain. Exported so it
  * can be tested without a running Harness.
  */
-export function chooseTier(healthy, difficulty) {
-  if (!Array.isArray(healthy) || healthy.length === 0) return { pick: null, chain: [], desired: 0, degraded: false }
+export function chooseTier(healthy, difficulty, needs = []) {
+  if (!Array.isArray(healthy) || healthy.length === 0) {
+    return { pick: null, chain: [], desired: 0, degraded: false, matched: false, missing: [] }
+  }
   const desired = Math.min(10, Math.max(1, 11 - Math.round(Number(difficulty) || 1)))
+  // Capability tags narrow the pool first: "this work needs long-context" must
+  // not land on a tier that cannot read it, however well its slot fits.
+  const required = (Array.isArray(needs) ? needs : [])
+    .map((need) => String(need ?? '').trim())
+    .filter(Boolean)
+  const tagged = required.length === 0
+    ? healthy
+    : healthy.filter((tier) => required.every((need) => Array.isArray(tier.tags) && tier.tags.includes(need)))
+  const matched = tagged.length > 0
+  const pool = matched ? tagged : healthy
   // A tier at slot s covers every difficulty up to its ceiling (11 - s), so the
   // tiers that can do this task are the ones with slot <= desired: the weakest
   // of them wins. A hole is covered by the stronger tier above it.
-  const covers = healthy.filter((tier) => tier.slot <= desired)
-  const pick = covers.length > 0 ? covers[covers.length - 1] : healthy[0]
-  const chain = healthy.filter((tier) => tier.slot >= pick.slot)
-  return { pick, chain, desired, degraded: pick.slot !== desired }
+  const covers = pool.filter((tier) => tier.slot <= desired)
+  const pick = covers.length > 0 ? covers[covers.length - 1] : pool[0]
+  const chain = pool.filter((tier) => tier.slot >= pick.slot)
+  return {
+    pick,
+    chain,
+    desired,
+    degraded: pick.slot !== desired,
+    matched,
+    missing: matched ? [] : required,
+  }
 }
 
 async function writeLadder(file, ladder) {
@@ -1069,7 +1091,8 @@ function renumber(tiers) {
 }
 
 function renderTier(tier, index) {
-  return `T${tier.slot}. ${tier.id} ${tier.label} — ${tierRoute(tier)} · covers up to ${tier.ceiling}${tier.enabled ? '' : ' · disabled'}`
+  const tags = Array.isArray(tier.tags) && tier.tags.length ? ` · [${tier.tags.join(', ')}]` : ''
+  return `T${tier.slot}. ${tier.id} ${tier.label} — ${tierRoute(tier)} · covers up to ${tier.ceiling}${tags}${tier.enabled ? '' : ' · disabled'}`
 }
 
 /**
@@ -2217,7 +2240,7 @@ export function apply(ctx, config) {
     return ok
   }
 
-  const resolveRoute = async (ladder, difficulty, cwd) => {
+  const resolveRoute = async (ladder, difficulty, cwd, needs = []) => {
     const tiers = ladder.tiers
     const availability = await Promise.all(tiers.map((tier) => tierAvailable(tier)))
     const failures = cwd ? readFailures(cwd, cfg) : {}
@@ -2240,8 +2263,17 @@ export function apply(ctx, config) {
     // the tiers that can do this task are the ones with slot <= desired. Pick
     // the weakest of them; a hole (T3 empty) is covered by the stronger tier
     // above it, not by a weaker one below.
-    const choice = chooseTier(healthy, difficulty)
-    return { tier: choice.pick, degraded: choice.degraded, usable: healthy.length, total: tiers.length, chain: choice.chain, desired: choice.desired }
+    const choice = chooseTier(healthy, difficulty, needs)
+    return {
+      tier: choice.pick,
+      degraded: choice.degraded,
+      usable: healthy.length,
+      total: tiers.length,
+      chain: choice.chain,
+      desired: choice.desired,
+      needsMatched: choice.matched,
+      needsMissing: choice.missing,
+    }
   }
 
   const routeOptions = (tier) => ({
@@ -3264,6 +3296,11 @@ export function apply(ctx, config) {
           type: 'string',
           description: 'Explicit ladder tier id from `supa_models list`, bypassing the difficulty ranking.',
         },
+        needs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Capabilities the worker needs, matched against a tier\'s tags (for example `long-context`). Tiers without every tag are skipped; when none matches, difficulty decides and the brief says so.',
+        },
         task: {
           type: 'string',
           description: 'Id of a team task on the shared board. The worker reads it with team_task_get, claims it, does the work, and marks it complete before reporting.',
@@ -3363,9 +3400,17 @@ export function apply(ctx, config) {
           if (tier.enabled === false) throw new Error(`tier ${args.route} ("${tier.label}") is switched off; enable it first or route by difficulty`)
           routeChain = [tier]
         } else {
-          const picked = await resolveRoute(ladder, Math.min(10, Math.max(1, Number(args.difficulty) || 5)), cwd)
+          const needs = (Array.isArray(args.needs) ? args.needs : [])
+            .map((need) => String(need ?? '').trim())
+            .filter(Boolean)
+          const picked = await resolveRoute(ladder, Math.min(10, Math.max(1, Number(args.difficulty) || 5)), cwd, needs)
           tier = picked.tier
           routeChain = picked.chain
+          if (needs.length > 0 && picked.needsMatched === false) {
+            // Say it once: the task asked for a capability no tier declares, so
+            // it lands on the difficulty pick instead of a tagged one.
+            parts.push(`## Routing note\nNo tier declares ${needs.map((need) => `\`${need}\``).join(', ')}, so this went to the difficulty pick (T${tier?.slot ?? '?'}).`)
+          }
         }
         if (tier) {
           agentOptions = routeOptions(tier)
