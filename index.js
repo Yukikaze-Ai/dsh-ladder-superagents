@@ -863,53 +863,76 @@ function sessionsFileOf() {
 }
 
 function readEnabledSessions() {
-  try {
-    const raw = JSON.parse(readFileSync(sessionsFileOf(), 'utf8'))
-    return Array.isArray(raw?.enabled) ? raw.enabled.map(String) : []
-  } catch {
-    return []
-  }
+  return readSessionsFile().enabled
 }
 
 /**
- * Per-session mode overrides, kept beside the enable list. A session with no
- * entry follows `cfg.profile`; one with an entry is pinned, so two sessions in
- * the same profile can run different products at the same time.
+ * Per-session mode overrides. A session with no entry follows cfg.profile;
+ * one with an entry is pinned, so two sessions in the same profile can run
+ * different products at the same time.
  */
 function readSessionModes() {
+  return readSessionsFile().modes
+}
+
+/**
+ * Per-session brain allowlists. An empty or missing list means every brain is
+ * available; a list narrows this session to those tier ids.
+ */
+function readSessionBrains() {
+  return readSessionsFile().brains
+}
+
+/**
+ * Everything the plugin remembers per session lives in one file: which sessions
+ * are enabled, which product each is pinned to, and which brains each may use.
+ * One reader and one writer, so a pill click cannot erase a pin.
+ */
+function readSessionsFile() {
   try {
     const raw = JSON.parse(readFileSync(sessionsFileOf(), 'utf8'))
-    const modes = raw?.modes && typeof raw.modes === 'object' ? raw.modes : {}
-    const out = {}
-    for (const [id, value] of Object.entries(modes)) {
-      const mode = resolveProfile(value)
-      if (id) out[String(id)] = mode
+    const modes = {}
+    for (const [id, value] of Object.entries(raw?.modes ?? {})) {
+      if (id) modes[String(id)] = resolveProfile(value)
     }
-    return out
+    const brains = {}
+    for (const [id, list] of Object.entries(raw?.brains ?? {})) {
+      if (id && Array.isArray(list)) brains[String(id)] = list.map(String).filter(Boolean)
+    }
+    return {
+      enabled: Array.isArray(raw?.enabled) ? raw.enabled.map(String) : [],
+      modes,
+      brains,
+    }
   } catch {
-    return {}
+    return { enabled: [], modes: {}, brains: {} }
   }
 }
 
-async function writeSessionModes(modes) {
-  const bounded = Object.fromEntries(Object.entries(modes).slice(-200))
+async function writeSessionsFile(next) {
+  const enabled = (next.enabled ?? []).slice(-200)
+  const modes = Object.fromEntries(Object.entries(next.modes ?? {}).slice(-200))
+  const brains = Object.fromEntries(Object.entries(next.brains ?? {}).slice(-200))
   await mkdir(stateDirOf(), { recursive: true })
-  let enabled = readEnabledSessions()
-  try {
-    const raw = JSON.parse(readFileSync(sessionsFileOf(), 'utf8'))
-    if (Array.isArray(raw?.enabled)) enabled = raw.enabled.map(String)
-  } catch {
-    // no enable list yet
-  }
-  await writeFile(sessionsFileOf(), `${JSON.stringify({ version: 1, enabled, modes: bounded }, null, 2)}\n`, 'utf8')
+  await writeFile(sessionsFileOf(), `${JSON.stringify({ version: 2, enabled, modes, brains }, null, 2)}\n`, 'utf8')
+}
+
+async function writeSessionModes(modes) {
+  const current = readSessionsFile()
+  await writeSessionsFile({ ...current, modes })
+}
+
+async function writeSessionBrains(brains) {
+  const current = readSessionsFile()
+  await writeSessionsFile({ ...current, brains })
 }
 
 async function writeEnabledSessions(list) {
   // The list is a cache of enabled sessions, not a history: keep it bounded so
-  // it cannot grow for years and slow the per-turn read.
-  const bounded = list.slice(-200)
-  await mkdir(stateDirOf(), { recursive: true })
-  await writeFile(sessionsFileOf(), `${JSON.stringify({ version: 1, enabled: bounded }, null, 2)}\n`, 'utf8')
+  // it cannot grow for years and slow the per-turn read. The other per-session
+  // keys are preserved: changing the switch must not drop a mode or a brain set.
+  const current = readSessionsFile()
+  await writeSessionsFile({ ...current, enabled: list })
 }
 
 /** Whether the ladder defines an enabled T1. Without it there is no SupA. */
@@ -3092,6 +3115,8 @@ export function apply(ctx, config) {
       // Per-session product pins, so the settings page can show and change
       // which session runs the ladder and which one runs brains.
       sessionModes: readSessionModes(),
+      // Which brains each session may use; an absent entry means all of them.
+      sessionBrains: readSessionBrains(),
       // How many workers each enabled session has running, so the header pill
       // can show activity instead of only on/off.
       running: await runningBySession(),
@@ -3143,6 +3168,14 @@ export function apply(ctx, config) {
         if (body.mode === 'default' || body.mode === '') delete modes[id]
         else modes[id] = resolveProfile(body.mode)
         await writeSessionModes(modes)
+      }
+      // The brains this session may use. An empty list means all of them.
+      if (Array.isArray(body.brains)) {
+        const brains = readSessionBrains()
+        const list = body.brains.map(String).filter(Boolean)
+        if (list.length === 0) delete brains[id]
+        else brains[id] = list
+        await writeSessionBrains(brains)
       }
       // Keep the click path cheap: a toggle is one file write. The client
       // refreshes the full state afterwards through the cached read.
@@ -3849,6 +3882,10 @@ export function apply(ctx, config) {
       let choseTier = null
       let routeChain = []
       const brainProfile = modeFor(agent) === 'eb'
+      // This session may be narrowed to a subset of the brains: some sessions
+      // want one reviewer, some want two, some a different vendor entirely.
+      const allowedBrains = readSessionBrains()[String(sessionOf(agent)?.id ?? '')] ?? []
+      const brainAllowed = (entry) => allowedBrains.length === 0 || allowedBrains.includes(String(entry.id))
       // A panel asks every matching brain the same question at once. Each one
       // answers independently; the caller compares, then can ask a second round
       // with the others' answers in the brief.
@@ -3859,9 +3896,10 @@ export function apply(ctx, config) {
         panelTiers = ladder.tiers.filter((entry) => entry.enabled !== false
           && isCliTier(entry)
           && entry.readonly === true
+          && brainAllowed(entry)
           && (want.length === 0 || want.every((need) => (entry.tags ?? []).includes(need))))
         if (panelTiers.length === 0) {
-          throw new Error(`no read-only CLI brain matches ${want.length ? want.join(' + ') : 'the panel'}; add one in the External brains panel`)
+          throw new Error(`no read-only CLI brain matches ${want.length ? want.join(' + ') : 'the panel'} in this session; widen the session's brains in Usage → Settings or add one`)
         }
       }
       // In brain mode the only thing this plugin may dispatch is an external
@@ -3886,7 +3924,7 @@ export function apply(ctx, config) {
           // tier would be a second delegation system, and a read-write CLI
           // would be a brain with hands.
           const pool = brainProfile
-            ? { ...ladder, tiers: ladder.tiers.filter((entry) => isCliTier(entry) && entry.readonly === true) }
+            ? { ...ladder, tiers: ladder.tiers.filter((entry) => isCliTier(entry) && entry.readonly === true && brainAllowed(entry)) }
             : ladder
           if (brainProfile && pool.tiers.length === 0) {
             throw new Error('brain mode needs at least one read-only CLI tier; add one with `supa_models add` (driver claude, readonly true)')

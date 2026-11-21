@@ -611,7 +611,7 @@ window.__ModuleLoader__.load({
      * One brain: state at a glance, chips for its tags, and an inline editor so
      * changing the model or the tags does not mean removing and re-adding it.
      */
-    function BrainRow({ tier, declared, catalog, busy, onAction, color, s, t }) {
+    function BrainRow({ tier, declared, catalog, busy, onAction, color, s, t, checked, onToggle }) {
       const [editing, setEditing] = useState(false)
       const [name, setName] = useState(tier.label ?? '')
       const [model, setModel] = useState(tier.model ?? '')
@@ -651,6 +651,17 @@ window.__ModuleLoader__.load({
         },
       },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+        // The checkbox says whether THIS session may use the brain; the rest of
+        // the row edits the brain itself.
+        checked === undefined
+          ? null
+          : h('input', {
+            type: 'checkbox',
+            checked: checked === true,
+            disabled: busy,
+            'aria-label': `${t('use in this session')}: ${tier.label}`,
+            onChange: () => onToggle?.(tier.id),
+          }),
         h('span', {
           style: { width: 7, height: 7, borderRadius: '50%', background: usable ? color.ok : color.bad, flex: 'none' },
           title: usable ? t('ready') : reason || t('unavailable'),
@@ -963,40 +974,9 @@ window.__ModuleLoader__.load({
             h('div', { style: s.hint }, t('Without T1 there is no tier to catch the hardest task. SupA cannot be enabled and spawns are refused; put a model in slot 1 first.')))
           : null,
 
-        // Brain mode is a different product: no ladder, no slots, no difficulty
-        // ranking. It lists the external brains this folder can consult.
-        profile === 'eb'
-          ? h('div', { style: s.card },
-            h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
-              h('div', { style: { ...s.sectionTitle, flex: 1 } }, t('External brains')),
-              h('button', {
-                style: s.btnPrimary,
-                disabled: busy,
-                onClick: () => setManualOpen((open) => !open),
-                title: t('Add a read-only external brain'),
-              }, manualOpen ? t('Close') : t('Add a brain'))),
-            h('div', { style: s.hint }, t('Brains read this folder and answer with thinking, review and blind spots. They cannot edit files or run commands: the harness stays in charge of every change, and its own subagents stay its own.')),
-            brains.length === 0
-              ? h('div', { style: { ...s.hint, paddingTop: 8 } }, t('No brain yet. Add a CLI tier below (Claude is the verified one) — it is added as read-only.'))
-              : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8 } },
-                ...brains.map((tier) => h(BrainRow, {
-                  key: tier.id,
-                  tier,
-                  declared: state.declared,
-                  catalog: state.catalog,
-                  busy,
-                  onAction: act,
-                  color,
-                  s,
-                  t,
-                }))),
-            h('div', { style: { ...s.hint, paddingTop: 10 } }, t('Ask one with `supa_brain { needs: [...], brief: "..." }`; the answer lands in `supa_inbox`.')),
-            // The form belongs under the button that opens it; leaving it at
-            // the bottom of the page looked like the button did nothing.
-            manualOpen
-              ? h('div', { style: { paddingTop: 10 } }, h(AddForm, { drivers: state.drivers, onAdd: act, brain: true, declared: state.declared, catalog: state.catalog }))
-              : null)
-          : h('div', { style: s.section },
+        // The ladder is global: it is the model pool every session draws from.
+        // Which brains a session may use is configured in that session.
+        h('div', { style: s.section },
           ...Array.from({ length: 10 }, (_, offset) => {
             const slot = offset + 1
             const tier = tiers.find((entry) => entry.slot === slot)
