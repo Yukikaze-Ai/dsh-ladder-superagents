@@ -435,20 +435,31 @@ window.__ModuleLoader__.load({
       const [error, setError] = useState('')
 
       // A brain's model is picked, not typed. Codex's list comes from the last
-      // `scan`; every other driver's comes from catalog.json; a driver with
-      // neither keeps the free-text field.
+      // `scan`; every other driver's comes from the built-in catalog; a driver
+      // with neither keeps the free-text field.
       const choicesFor = (name) => {
         if (name === 'codex') {
-          const scanned = (catalog?.models ?? []).map((entry) => ({ id: entry.slug, label: entry.slug }))
+          const scanned = (catalog?.models ?? [])
+            .map((entry) => ({ id: entry.slug, label: entry.name ?? entry.slug }))
           if (scanned.length > 0) return scanned
         }
         return (declared?.[name]?.models ?? []).map((entry) => ({ id: entry.id, label: entry.label ?? entry.id }))
       }
 
+      // Both CLIs publish a reasoning ladder, and both name it differently:
+      // codex lists the efforts per model in its scanned catalog, claude in the
+      // built-in one. Read whichever applies so neither driver grows a dead
+      // control or a missing one.
+      const effortsFor = (name, modelId) => {
+        if (name === 'codex') {
+          const entry = (catalog?.models ?? []).find((candidate) => candidate.slug === modelId)
+          return entry?.efforts ?? []
+        }
+        return declared?.[name]?.efforts ?? []
+      }
+
       const modelChoices = brain ? choicesFor(driver) : []
-      // Claude exposes a five-step effort ladder; catalog.json says which
-      // drivers have one, so no other driver grows a dead control.
-      const effortChoices = brain ? (declared?.[driver]?.efforts ?? []) : []
+      const effortChoices = brain ? effortsFor(driver, model) : []
       // Only drivers that can enforce read-only may be a brain; the rest would
       // be a brain with hands.
       const brainDrivers = drivers.filter((name) => declared?.[name]?.readonlySupported === true)
@@ -600,14 +611,21 @@ window.__ModuleLoader__.load({
      * One brain: state at a glance, chips for its tags, and an inline editor so
      * changing the model or the tags does not mean removing and re-adding it.
      */
-    function BrainRow({ tier, declared, busy, onAction, color, s, t }) {
+    function BrainRow({ tier, declared, catalog, busy, onAction, color, s, t }) {
       const [editing, setEditing] = useState(false)
       const [name, setName] = useState(tier.label ?? '')
       const [model, setModel] = useState(tier.model ?? '')
       const [effort, setEffort] = useState(tier.reasoningEffort ?? '')
       const [tags, setTags] = useState((tier.tags ?? []).join(', '))
-      const models = declared?.[tier.driver]?.models ?? []
-      const efforts = declared?.[tier.driver]?.efforts ?? []
+      // Codex keeps its model list and its efforts in the scanned catalog;
+      // every other driver reads the built-in one.
+      const isCodex = tier.driver === 'codex'
+      const models = isCodex
+        ? (catalog?.models ?? []).map((entry) => ({ id: entry.slug, label: entry.name ?? entry.slug }))
+        : declared?.[tier.driver]?.models ?? []
+      const efforts = isCodex
+        ? (catalog?.models ?? []).find((entry) => entry.slug === model)?.efforts ?? []
+        : declared?.[tier.driver]?.efforts ?? []
       const usable = tier.available !== false && tier.enabled !== false && !tier.failure
       const reason = tier.failure || (tier.available === false ? t('CLI not found') : '')
 
@@ -965,6 +983,7 @@ window.__ModuleLoader__.load({
                   key: tier.id,
                   tier,
                   declared: state.declared,
+                  catalog: state.catalog,
                   busy,
                   onAction: act,
                   color,
