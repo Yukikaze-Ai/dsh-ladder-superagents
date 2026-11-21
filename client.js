@@ -1333,6 +1333,10 @@ window.__ModuleLoader__.load({
       'language': '界面语言',
       'auto': '自动',
       'This session': '本会话',
+      'Settings': '设置',
+      'Usage': '用量',
+      'running in this session': '正在这个会话里运行',
+      'not running in this session': '这个会话里没有运行',
       'Product': '产品',
       'Default product': '默认产品',
       'Applies to every session that is not pinned; pin one from the header pill in that session': '对所有未钉住的会话生效；在会话头部的胶囊里单独钉住某个会话',
@@ -1451,7 +1455,7 @@ window.__ModuleLoader__.load({
       }
 
       const tabs = h('div', { style: { display: 'flex', gap: 6, paddingBottom: 4 } },
-        ...[['usage', t('Usage')], ['session', t('This session')]].map(([value, label]) => h('button', {
+        ...[['usage', t('Usage')], ['session', t('Settings')]].map(([value, label]) => h('button', {
           key: value,
           style: {
             fontSize: 12,
@@ -1473,7 +1477,7 @@ window.__ModuleLoader__.load({
         const on = (settings?.supaSessions ?? []).some((id) => String(id) === sessionId)
         return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
           h('div', { style: s.card },
-            h('div', { style: s.sectionTitle }, t('This session')),
+            h('div', { style: s.sectionTitle }, t('Settings')),
             h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 6 } },
               h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
                 h('span', { style: { fontSize: 12, minWidth: 110, color: color.text } }, 'SupA'),
@@ -1702,6 +1706,7 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
 
 
