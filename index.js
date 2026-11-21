@@ -466,12 +466,12 @@ const FALLBACK_TIER = {
   reasoningEffort: 'high',
 }
 
-async function ensureUsableRoute(cwd, cfg) {
+async function ensureUsableRoute(cwd, cfg, mode = cfg.profile) {
   const ladder = await readLadder(modelsFileOf())
   if (ladder.tiers.length === 0) return null
-  // EB mode never swaps a brain for the built-in llm fallback: that would put a
-  // write-capable harness tier into a read-only shelf.
-  if (cfg.profile === 'eb') return null
+  // An EB session never swaps a brain for the built-in llm fallback: that would
+  // put a write-capable harness tier into a read-only shelf.
+  if (mode === 'eb') return null
   const failures = readFailures(cwd, cfg)
   // Only failed tiers trigger the fallback. A tier the user switched off by
   // hand is their decision, not a broken route.
@@ -869,6 +869,39 @@ function readEnabledSessions() {
   } catch {
     return []
   }
+}
+
+/**
+ * Per-session mode overrides, kept beside the enable list. A session with no
+ * entry follows `cfg.profile`; one with an entry is pinned, so two sessions in
+ * the same profile can run different products at the same time.
+ */
+function readSessionModes() {
+  try {
+    const raw = JSON.parse(readFileSync(sessionsFileOf(), 'utf8'))
+    const modes = raw?.modes && typeof raw.modes === 'object' ? raw.modes : {}
+    const out = {}
+    for (const [id, value] of Object.entries(modes)) {
+      const mode = resolveProfile(value)
+      if (id) out[String(id)] = mode
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+async function writeSessionModes(modes) {
+  const bounded = Object.fromEntries(Object.entries(modes).slice(-200))
+  await mkdir(stateDirOf(), { recursive: true })
+  let enabled = readEnabledSessions()
+  try {
+    const raw = JSON.parse(readFileSync(sessionsFileOf(), 'utf8'))
+    if (Array.isArray(raw?.enabled)) enabled = raw.enabled.map(String)
+  } catch {
+    // no enable list yet
+  }
+  await writeFile(sessionsFileOf(), `${JSON.stringify({ version: 1, enabled, modes: bounded }, null, 2)}\n`, 'utf8')
 }
 
 async function writeEnabledSessions(list) {
@@ -1880,6 +1913,19 @@ export function apply(ctx, config) {
     return { id, header: hasParent ? { parentSession: 'unknown' } : {} }
   }
 
+  /**
+   * The product this session runs: the per-session pin when it has one, else
+   * the profile default. Two sessions may run different products at once.
+   */
+  const modeFor = (agent) => {
+    const id = sessionOf(agent)?.id ? String(sessionOf(agent).id) : ''
+    const parent = sessionOf(agent)?.header?.parentSession
+    const modes = readSessionModes()
+    if (id && modes[id]) return modes[id]
+    if (parent && modes[String(parent)]) return modes[String(parent)]
+    return cfg.profile
+  }
+
   const isSupa = (agent) => {
     if (!agent) return false
     if (cfg.mode === 'root') return !sessionOf(agent)?.header?.parentSession
@@ -2137,9 +2183,10 @@ export function apply(ctx, config) {
     return 'spawned'
   }
 
-  // In brain mode the harness owns command execution: no hand-off, no advice.
-  if (cfg.profile !== 'eb') ctx.effect(() => ctx.tools.guard((execution) => {
+  // An EB session leaves command execution to the harness: no hand-off, no advice.
+  ctx.effect(() => ctx.tools.guard((execution) => {
     if (!execution || !isSupa(execution.agent)) return undefined
+    if (modeFor(execution.agent) === 'eb') return undefined
     if (execution.name !== 'pwsh' && execution.name !== 'bash') return undefined
     // A child exists to run the command. Handing off from a child would spawn a
     // child of a child forever, and nobody would ever execute anything.
@@ -2189,12 +2236,13 @@ export function apply(ctx, config) {
 
   // Children the platform starts with `subagent` never pass through the ladder,
   // so they are invisible to the stats. Count them instead of pretending the
-  // session did nothing. Brain mode leaves the harness's subagents alone.
-  if (cfg.profile !== 'eb') ctx.effect(() => ctx.tools.guard((execution) => {
+  // session did nothing. An EB session leaves the harness's subagents alone.
+  ctx.effect(() => ctx.tools.guard((execution) => {
     const name = typeof execution?.name === 'string' ? execution.name : ''
     if (name !== 'subagent' && name !== 'subagent_fork') return undefined
     const agent = execution.agent
     if (!agent || !isSupa(agent)) return undefined
+    if (modeFor(agent) === 'eb') return undefined
     try {
       const args = execution.arguments ?? {}
       recordUsage({
@@ -2249,6 +2297,11 @@ export function apply(ctx, config) {
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['status', 'enable', 'disable'], description: 'status reads the flag, enable/disable changes it for this session.' },
+        mode: {
+          type: 'string',
+          enum: ['normal', 'eb', 'default'],
+          description: 'Pin this session to a product: `normal` runs the ladder, `eb` runs external brains only, `default` follows the profile setting.',
+        },
       },
       required: ['action'],
       additionalProperties: false,
@@ -2261,6 +2314,7 @@ export function apply(ctx, config) {
           session: { type: 'string' },
           mode: { type: 'string' },
           supa: { type: 'boolean' },
+          profile: { type: 'string' },
           stillRunning: { type: 'number' },
           note: { type: 'string' },
         },
@@ -2283,7 +2337,21 @@ export function apply(ctx, config) {
       if (args.action === 'disable') enabled = enabled.filter((entry) => entry !== id)
       if (args.action !== 'status') await writeEnabledSessions(enabled)
 
-      const value = { session: id, mode: cfg.mode, supa: isSupa(agent) }
+      // A session may be pinned to one product while the rest of the profile
+      // keeps the other; `default` clears the pin.
+      if (args.mode !== undefined) {
+        const modes = readSessionModes()
+        if (args.mode === 'default') delete modes[id]
+        else modes[id] = resolveProfile(args.mode)
+        await writeSessionModes(modes)
+        if (args.action === 'status' && !enabled.includes(id)) {
+          // Pinning a product implies the session runs the plugin at all.
+          await writeEnabledSessions([...enabled, id])
+          enabled = [...enabled, id]
+        }
+      }
+
+      const value = { session: id, mode: cfg.mode, supa: isSupa(agent), profile: modeFor(agent) }
       if (args.action === 'disable') {
         // Switching off stops new delegation; it does not kill work in flight
         // and it does not throw results away.
@@ -2488,7 +2556,7 @@ export function apply(ctx, config) {
     order: sectionOrder,
     text: (context) => {
       if (!context?.agent || !isSupa(context.agent)) return ''
-      return cfg.profile === 'eb' ? BRAIN_CHARTER : CHARTER
+      return modeFor(context.agent) === 'eb' ? BRAIN_CHARTER : CHARTER
     },
   })
 
@@ -3021,6 +3089,9 @@ export function apply(ctx, config) {
           at: Number(entry.at) || 0,
         })),
       supaSessions: readEnabledSessions(),
+      // Per-session product pins, so the settings page can show and change
+      // which session runs the ladder and which one runs brains.
+      sessionModes: readSessionModes(),
       // How many workers each enabled session has running, so the header pill
       // can show activity instead of only on/off.
       running: await runningBySession(),
@@ -3066,6 +3137,13 @@ export function apply(ctx, config) {
       const next = readEnabledSessions().filter((entry) => entry !== id)
       if (body.enabled !== false) next.push(id)
       await writeEnabledSessions(next)
+      // An optional per-session product pin travels with the same click.
+      if (body.mode !== undefined) {
+        const modes = readSessionModes()
+        if (body.mode === 'default' || body.mode === '') delete modes[id]
+        else modes[id] = resolveProfile(body.mode)
+        await writeSessionModes(modes)
+      }
       // Keep the click path cheap: a toggle is one file write. The client
       // refreshes the full state afterwards through the cached read.
       stateCache = { at: 0, value: null }
@@ -3770,7 +3848,7 @@ export function apply(ctx, config) {
       let routed = 'inherit'
       let choseTier = null
       let routeChain = []
-      const brainProfile = cfg.profile === 'eb'
+      const brainProfile = modeFor(agent) === 'eb'
       // A panel asks every matching brain the same question at once. Each one
       // answers independently; the caller compares, then can ask a second round
       // with the others' answers in the brief.
@@ -4486,6 +4564,14 @@ export function apply(ctx, config) {
     const brainTool = {
       ...spawnTool,
       name: 'supa_brain',
+      // Same executor, gated on the session's product: a ladder session must
+      // not quietly consult a brain instead of delegating.
+      execute: async (args, exec) => {
+        if (modeFor(exec?.agent) !== 'eb') {
+          throw new Error('`supa_brain` is for EB sessions. This session runs the ladder: use `supa_spawn`, or pin it with `supa_session { mode: "eb" }` first.')
+        }
+        return spawnTool.execute(args, exec)
+      },
       description: [
         'Consult an external brain: a model outside this harness that reads the same folder and answers with thinking, review or a blind spot.',
         'A brain is read-only (Claude runs in plan mode); it cannot edit files or run commands, so hand it a path and ask for its judgement, not for a change.',
@@ -4494,9 +4580,10 @@ export function apply(ctx, config) {
       ].join(' '),
     }
 
-    const definitions = cfg.profile === 'eb'
-      ? [contextTool, inboxTool, modelsTool, brainTool, statusTool]
-      : [contextTool, reportTool, inboxTool, modelsTool, spawnTool, requestTool, supplyTool, authorityTool, statusTool, stopTool]
+    // Both products ship in every profile: the mode is per session, so the
+    // tools are registered once and each call checks which session it is in.
+    const definitions = [contextTool, reportTool, inboxTool, modelsTool, brainTool, spawnTool,
+      requestTool, supplyTool, authorityTool, statusTool, stopTool]
     const disposers = definitions.map((definition) => ctx.tools.register(definition))
     return () => {
       for (const dispose of disposers.reverse()) {
