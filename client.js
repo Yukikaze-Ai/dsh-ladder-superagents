@@ -3,7 +3,7 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react')
     const h = React.createElement
-    const { useCallback, useEffect, useMemo, useState } = React
+    const { useCallback, useEffect, useMemo, useRef, useState } = React
 
     // Only the host's alias tokens: they switch with the theme, and a renamed
     // token degrades the look instead of breaking the page.
@@ -1335,6 +1335,8 @@ window.__ModuleLoader__.load({
       'This session': '本会话',
       'Settings': '设置',
       'Usage': '用量',
+      'SupA usage and settings': 'SupA 用量与设置',
+      'Saving…': '保存中…',
       'running in this session': '正在这个会话里运行',
       'not running in this session': '这个会话里没有运行',
       'Product': '产品',
@@ -1397,6 +1399,78 @@ window.__ModuleLoader__.load({
       fontWeight: 500,
     }
 
+    /**
+     * A tablist following the ARIA tabs pattern: selection follows focus, focus
+     * enters the selected tab, and the selected state is drawn with an underline
+     * rather than colour alone. Two tabs never overflow, so there is no
+     * scrolling or overflow menu.
+     */
+    function Tabs({ id, label, items, value, onChange }) {
+      const refs = useRef({})
+      const index = Math.max(0, items.findIndex((item) => item.value === value))
+      const onKeyDown = (event) => {
+        let next = index
+        if (event.key === 'ArrowRight') next = (index + 1) % items.length
+        else if (event.key === 'ArrowLeft') next = (index - 1 + items.length) % items.length
+        else if (event.key === 'Home') next = 0
+        else if (event.key === 'End') next = items.length - 1
+        else return
+        event.preventDefault()
+        const target = items[next]
+        onChange(target.value)
+        refs.current[target.value]?.focus()
+      }
+      return h('div', {
+        role: 'tablist',
+        'aria-label': label,
+        onKeyDown,
+        style: { display: 'flex', gap: 2, borderBottom: `1px solid ${color.border}`, marginBottom: 10 },
+      },
+      ...items.map((item) => h('button', {
+        key: item.value,
+        type: 'button',
+        role: 'tab',
+        id: `${id}-tab-${item.value}`,
+        'aria-selected': item.value === value,
+        tabIndex: item.value === value ? 0 : -1,
+        ref: (node) => { refs.current[item.value] = node },
+        onClick: () => onChange(item.value),
+        style: {
+          // Identical box in both states: the indicator is an absolutely
+          // positioned bar, so selecting a tab never shifts the row.
+          position: 'relative',
+          padding: '7px 12px',
+          border: 'none',
+          background: 'transparent',
+          cursor: 'pointer',
+          fontSize: 12.5,
+          color: item.value === value ? color.text : color.muted,
+          fontWeight: item.value === value ? 600 : 400,
+        },
+      },
+      item.label,
+      item.value === value
+        ? h('span', {
+          'aria-hidden': 'true',
+          style: {
+            position: 'absolute',
+            inset: 'auto 8px -1px',
+            borderBlockEnd: `2px solid ${color.brand}`,
+          },
+        })
+        : null)))
+    }
+
+    /** The panel half: a tab panel is a landmark, styled through a wrapper. */
+    function TabPanel({ id, value, children }) {
+      return h('div', {
+        role: 'tabpanel',
+        id: `${id}-panel-${value}`,
+        'aria-labelledby': `${id}-tab-${value}`,
+        style: { display: 'block' },
+      }, h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, children))
+    }
+
     function SupaStatsView(props) {
       useLang()
       const sessionId = String(props?.sessionId ?? '')
@@ -1454,20 +1528,11 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const tabs = h('div', { style: { display: 'flex', gap: 6, paddingBottom: 4 } },
-        ...[['usage', t('Usage')], ['session', t('Settings')]].map(([value, label]) => h('button', {
-          key: value,
-          style: {
-            fontSize: 12,
-            padding: '4px 10px',
-            borderRadius: 8,
-            cursor: 'pointer',
-            border: `1px solid ${color.border}`,
-            background: tab === value ? 'var(--dsw-alias-bg-layer-2, rgba(127,127,127,.14))' : 'transparent',
-            color: tab === value ? color.text : color.muted,
-          },
-          onClick: () => setTab(value),
-        }, label)))
+      const tabItems = [
+        { value: 'usage', label: t('Usage') },
+        { value: 'session', label: t('Settings') },
+      ]
+      const tabs = h(Tabs, { id: 'supa-view', label: t('SupA usage and settings'), items: tabItems, value: tab, onChange: setTab })
 
       const sessionTab = (() => {
         if (!sessionId) return h('div', { style: s.card }, h('div', { style: s.hint }, t('This view has no session id.')))
@@ -1502,8 +1567,11 @@ window.__ModuleLoader__.load({
       })()
 
       if (tab === 'session') {
-        return h('div', { style: s.page }, tabs, sessionTab,
-          error ? h('div', { style: s.error }, error) : null)
+        return h(React.Fragment, null, tabs,
+          h('div', { role: 'tabpanel', 'aria-labelledby': 'supa-view-tab-session', style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+            sessionTab,
+            h('div', { 'aria-live': 'polite', style: { fontSize: 11.5, color: color.muted } }, busy ? t('Saving…') : ''),
+            error ? h('div', { style: s.error }, error) : null))
       }
 
       if (error) return h('div', { style: s.page }, h('div', { style: s.error }, `stats: ${error}`))
@@ -1611,8 +1679,8 @@ window.__ModuleLoader__.load({
         h('span', { style: { fontSize: 11, minWidth: 60, color: color.muted, textAlign: 'right' } }, `${record.ms}ms`))
       })
 
-      return h('div', { style: { ...s.page, gap: 10, padding: '16px 28px 20px' } },
-        tabs,
+      return h(React.Fragment, null, tabs,
+        h('div', { role: 'tabpanel', 'aria-labelledby': 'supa-view-tab-usage', style: { ...s.page, gap: 10, padding: '16px 28px 20px' } },
         h('div', {
           style: {
             display: 'flex',
@@ -1674,7 +1742,7 @@ window.__ModuleLoader__.load({
           h('div', { style: s.sectionTitle }, t('Recent calls')),
           recent.length === 0
             ? h('div', { style: s.hint }, '—')
-            : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } }, ...recentRows(recent))))
+            : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } }, ...recentRows(recent)))))
     }
 
     return {
