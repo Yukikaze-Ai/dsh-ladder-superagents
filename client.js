@@ -422,13 +422,13 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function AddForm({ drivers, onAdd, disabled }) {
-      const [kind, setKind] = useState('llm')
+    function AddForm({ drivers, onAdd, disabled, brain }) {
+      const [kind, setKind] = useState(brain ? 'cli' : 'llm')
       const [label, setLabel] = useState('')
       const [provider, setProvider] = useState('')
-      const [model, setModel] = useState('')
+      const [model, setModel] = useState(brain ? 'opus' : '')
       const [effort, setEffort] = useState('')
-      const [driver, setDriver] = useState('codex')
+      const [driver, setDriver] = useState(brain ? 'claude' : 'codex')
       const [ceiling, setCeiling] = useState('5')
       const [error, setError] = useState('')
 
@@ -437,54 +437,75 @@ window.__ModuleLoader__.load({
         try {
           await onAdd({
             action: 'add',
-            tier: {
-              label: label || undefined,
-              kind,
-              driver: kind === 'cli' ? driver : undefined,
-              provider: kind === 'llm' ? provider : undefined,
-              model: model || undefined,
-              reasoningEffort: effort || undefined,
-              ceiling: Number(ceiling) || 5,
-            },
+            tier: brain
+              ? {
+                label: label || `Brain (${driver}${model ? ` ${model}` : ''})`,
+                kind: 'cli',
+                driver,
+                model: model || undefined,
+                tags: ['review', 'second-brain'],
+                // A brain exists to think, never to change the workspace.
+                readonly: true,
+              }
+              : {
+                label: label || undefined,
+                kind,
+                driver: kind === 'cli' ? driver : undefined,
+                provider: kind === 'llm' ? provider : undefined,
+                model: model || undefined,
+                reasoningEffort: effort || undefined,
+                ceiling: Number(ceiling) || 5,
+              },
           })
           setLabel('')
-          setModel('')
-          setEffort('')
+          if (!brain) {
+            setModel('')
+            setEffort('')
+          }
         } catch (failure) {
           setError(String(failure.message ?? failure))
         }
       }
 
       return h('div', { style: s.card },
-        h('div', { style: s.sectionTitle }, t('Add a tier')),
+        h('div', { style: s.sectionTitle }, brain ? t('Add a brain') : t('Add a tier')),
         h('div', { style: s.hint }, disabled
           ? t('All ten slots are taken - remove one to add another.')
-          : t('Added to the first free slot; drag it into place afterwards.')),
+          : brain
+            ? t('A brain is a read-only CLI tier: it reads this folder and answers, and cannot edit files or run commands.')
+            : t('Added to the first free slot; drag it into place afterwards.')),
         h('div', { style: s.row },
-          h('select', { style: s.input, value: kind, onChange: (event) => setKind(event.target.value) },
-            h('option', { value: 'llm' }, 'llm'),
-            h('option', { value: 'cli' }, 'cli')),
-          kind === 'cli'
+          brain
             ? h('select', { style: s.input, value: driver, onChange: (event) => setDriver(event.target.value) },
               ...drivers.map((name) => h('option', { key: name, value: name }, name)))
-            : h('input', {
-              style: { ...s.input, width: 150 },
-              placeholder: t('provider'),
-              value: provider,
-              onChange: (event) => setProvider(event.target.value),
-            }),
+            : h('select', { style: s.input, value: kind, onChange: (event) => setKind(event.target.value) },
+              h('option', { value: 'llm' }, 'llm'),
+              h('option', { value: 'cli' }, 'cli')),
+          brain
+            ? null
+            : kind === 'cli'
+              ? h('select', { style: s.input, value: driver, onChange: (event) => setDriver(event.target.value) },
+                ...drivers.map((name) => h('option', { key: name, value: name }, name)))
+              : h('input', {
+                style: { ...s.input, width: 150 },
+                placeholder: t('provider'),
+                value: provider,
+                onChange: (event) => setProvider(event.target.value),
+              }),
           h('input', {
             style: { ...s.input, width: 150 },
-            placeholder: t('model'),
+            placeholder: brain ? t('model (blank = CLI default)') : t('model'),
             value: model,
             onChange: (event) => setModel(event.target.value),
           }),
-          h('input', {
-            style: { ...s.input, width: 100 },
-            placeholder: t('effort'),
-            value: effort,
-            onChange: (event) => setEffort(event.target.value),
-          }),
+          brain
+            ? null
+            : h('input', {
+              style: { ...s.input, width: 100 },
+              placeholder: t('effort'),
+              value: effort,
+              onChange: (event) => setEffort(event.target.value),
+            }),
           h('input', {
             style: { ...s.input, flex: 1, minWidth: 160 },
             placeholder: t('label'),
@@ -740,7 +761,14 @@ window.__ModuleLoader__.load({
         // ranking. It lists the external brains this folder can consult.
         profile === 'eb'
           ? h('div', { style: s.card },
-            h('div', { style: s.sectionTitle }, t('External brains')),
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+              h('div', { style: { ...s.sectionTitle, flex: 1 } }, t('External brains')),
+              h('button', {
+                style: s.btnPrimary,
+                disabled: busy,
+                onClick: () => setManualOpen((open) => !open),
+                title: t('Add a read-only external brain'),
+              }, manualOpen ? t('Close') : t('Add a brain'))),
             h('div', { style: s.hint }, t('Brains read this folder and answer with thinking, review and blind spots. They cannot edit files or run commands: the harness stays in charge of every change, and its own subagents stay its own.')),
             brains.length === 0
               ? h('div', { style: { ...s.hint, paddingTop: 8 } }, t('No brain yet. Add a CLI tier below (Claude is the verified one) — it is added as read-only.'))
@@ -816,7 +844,7 @@ window.__ModuleLoader__.load({
           canPinTiers: tiers.some((tier) => (tier.kind === 'cli' || tier.kind === 'codex') && tier.model),
         }),
         manualOpen
-          ? h(AddForm, { drivers: state.drivers, onAdd: act, disabled: tiers.length >= 10 })
+          ? h(AddForm, { drivers: state.drivers, onAdd: act, disabled: profile !== 'eb' && tiers.length >= 10, brain: profile === 'eb' })
           : h('button', {
             style: { ...s.btn, alignSelf: 'flex-start' },
             onClick: () => setManualOpen(true),
@@ -1028,6 +1056,12 @@ window.__ModuleLoader__.load({
         '用 `supa_brain { needs: [...], brief: "..." }` 问它；答案会进 `supa_inbox`。',
       'Mode': '模式',
       'Ladder': '阶梯模式',
+      'Add a brain': '添加大脑',
+      'Close': '收起',
+      'Add a read-only external brain': '添加一个只读的外部大脑',
+      'A brain is a read-only CLI tier: it reads this folder and answers, and cannot edit files or run commands.':
+        '大脑是一个只读的 CLI 档位：读这个文件夹并给出回答，不能改文件、不能跑命令。',
+      'model (blank = CLI default)': '模型（留空用 CLI 默认）',
       'The harness keeps its own subagents; the plugin only adds read-only external brains':
         '子代理交给 harness 自己管，我们只加只读的外部大脑',
       'Model usage': '模型使用统计',
