@@ -33,12 +33,13 @@ export const inject = ['tools', 'systemPrompt']
 const DEFAULTS = {
   enabled: true,
   /**
-   * What the plugin is for in this profile:
-   *   `ladder` — the full SupA: difficulty routing, harness workers, guards.
-   *   `brain`  — native DSH owns its subagents; the plugin only lends external
-   *              read-only brains (`supa_brain`), the shared ledger and the queue.
+   * Which product this profile runs:
+   *   `normal` — the SupA ladder: difficulty routing, harness workers, guards.
+   *   `eb`     — external brains: native DSH keeps its subagents, and this
+   *              plugin only lends read-only advisors, the ledger and the queue.
+   * `ladder` and `brain` are accepted as older spellings of the same two.
    */
-  profile: 'ladder',
+  profile: 'normal',
   /** 'all' | 'root' | 'preset' */
   mode: 'all',
   presets: [],
@@ -175,6 +176,16 @@ const TASK_CHARTER = [
   '- Report back only what your parent needs; keep the result short and concrete.',
 ].join('\n')
 
+/**
+ * The two products this plugin ships, with the older names still accepted:
+ * `normal` (the SupA ladder) and `eb` (external brains).
+ */
+export function resolveProfile(value) {
+  const text = String(value ?? '').trim().toLowerCase()
+  if (text === 'eb' || text === 'brain' || text === 'brains') return 'eb'
+  return 'normal'
+}
+
 function mergeConfig(config) {
   const merged = { ...DEFAULTS }
   if (config && typeof config === 'object') {
@@ -182,6 +193,7 @@ function mergeConfig(config) {
       if (value !== undefined && value !== null && key in merged) merged[key] = value
     }
   }
+  merged.profile = resolveProfile(merged.profile)
   return merged
 }
 
@@ -1836,7 +1848,7 @@ export function apply(ctx, config) {
     'If a human decision is genuinely required and irreversible, write the question to the ledger and describe exactly what you need.',
   ].join(' ')
 
-  if (cfg.denyBlockingQuestions && cfg.profile !== 'brain') {
+  if (cfg.denyBlockingQuestions && cfg.profile !== 'eb') {
     ctx.effect(() => ctx.tools.guard((execution) => {
       if (!execution || execution.name !== 'ask_user_question') return undefined
       if (!isSupa(execution.agent)) return undefined
@@ -1946,7 +1958,7 @@ export function apply(ctx, config) {
   }
 
   // In brain mode the harness owns command execution: no hand-off, no advice.
-  if (cfg.profile !== 'brain') ctx.effect(() => ctx.tools.guard((execution) => {
+  if (cfg.profile !== 'eb') ctx.effect(() => ctx.tools.guard((execution) => {
     if (!execution || !isSupa(execution.agent)) return undefined
     if (execution.name !== 'pwsh' && execution.name !== 'bash') return undefined
     // A child exists to run the command. Handing off from a child would spawn a
@@ -1998,7 +2010,7 @@ export function apply(ctx, config) {
   // Children the platform starts with `subagent` never pass through the ladder,
   // so they are invisible to the stats. Count them instead of pretending the
   // session did nothing. Brain mode leaves the harness's subagents alone.
-  if (cfg.profile !== 'brain') ctx.effect(() => ctx.tools.guard((execution) => {
+  if (cfg.profile !== 'eb') ctx.effect(() => ctx.tools.guard((execution) => {
     const name = typeof execution?.name === 'string' ? execution.name : ''
     if (name !== 'subagent' && name !== 'subagent_fork') return undefined
     const agent = execution.agent
@@ -2296,7 +2308,7 @@ export function apply(ctx, config) {
     order: sectionOrder,
     text: (context) => {
       if (!context?.agent || !isSupa(context.agent)) return ''
-      return cfg.profile === 'brain' ? BRAIN_CHARTER : CHARTER
+      return cfg.profile === 'eb' ? BRAIN_CHARTER : CHARTER
     },
   })
 
@@ -3535,7 +3547,7 @@ export function apply(ctx, config) {
       let routed = 'inherit'
       let choseTier = null
       let routeChain = []
-      const brainProfile = cfg.profile === 'brain'
+      const brainProfile = cfg.profile === 'eb'
       // In brain mode the only thing this plugin may dispatch is an external
       // CLI. Anything else is the harness's own business, so require a target
       // instead of silently inheriting the parent's route.
@@ -4204,7 +4216,7 @@ export function apply(ctx, config) {
       ].join(' '),
     }
 
-    const definitions = cfg.profile === 'brain'
+    const definitions = cfg.profile === 'eb'
       ? [contextTool, inboxTool, modelsTool, brainTool, statusTool]
       : [contextTool, reportTool, inboxTool, modelsTool, spawnTool, requestTool, supplyTool, authorityTool, statusTool, stopTool]
     const disposers = definitions.map((definition) => ctx.tools.register(definition))
@@ -4221,6 +4233,7 @@ export function apply(ctx, config) {
 
   log(`active (mode=${cfg.mode}, ledger=${cfg.ledgerDir}, autoApprove=${cfg.autoApprove})`)
 }
+
 
 
 

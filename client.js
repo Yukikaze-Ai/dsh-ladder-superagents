@@ -349,7 +349,7 @@ window.__ModuleLoader__.load({
                   model: model.id,
                   tags: ['review', 'second-brain', 'long-context'],
                   // In brain mode a new advisor is read-only by definition.
-                  ...(profile === 'brain' ? { readonly: true } : {}),
+                  ...(profile === 'eb' ? { readonly: true } : {}),
                 },
               }),
             }, t('Add')))))
@@ -531,13 +531,13 @@ window.__ModuleLoader__.load({
         field(t('Mode'),
           h('select', {
             style: control,
-            value: config.profile ?? 'ladder',
+            value: (config.profile ?? 'normal'),
             disabled: busy,
             onChange: (event) => onConfig({ profile: event.target.value }),
           },
-          h('option', { value: 'ladder' }, t('ladder (SupA spawns workers)')),
-          h('option', { value: 'brain' }, t('brain (native subagents + external brains)'))),
-          t('brain keeps the harness in charge of its own subagents and only adds read-only external brains')),
+          h('option', { value: 'normal' }, t('Normal (the SupA ladder)')),
+          h('option', { value: 'eb' }, t('EB (external brains)'))),
+          t('EB keeps the harness in charge of its own subagents and only adds read-only external brains')),
         field(t('Session scope'),
           h('select', {
             style: control,
@@ -702,7 +702,7 @@ window.__ModuleLoader__.load({
       return h('div', { style: s.page },
         h('div', { style: s.head },
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
-            h('div', { style: s.title }, profile === 'brain' ? t('Brains') : t('Model ladder')),
+            h('div', { style: s.title }, profile === 'eb' ? t('Brains') : t('Model ladder')),
             h('div', { style: s.sub }, summary),
             h('div', { style: s.sub }, state.file)),
           h('div', { style: s.actions },
@@ -738,7 +738,7 @@ window.__ModuleLoader__.load({
 
         // Brain mode is a different product: no ladder, no slots, no difficulty
         // ranking. It lists the external brains this folder can consult.
-        profile === 'brain'
+        profile === 'eb'
           ? h('div', { style: s.card },
             h('div', { style: s.sectionTitle }, t('External brains')),
             h('div', { style: s.hint }, t('Brains read this folder and answer with thinking, review and blind spots. They cannot edit files or run commands: the harness stays in charge of every change, and its own subagents stay its own.')),
@@ -1027,9 +1027,9 @@ window.__ModuleLoader__.load({
       'Ask one with `supa_brain { needs: [...], brief: "..." }`; the answer lands in `supa_inbox`.':
         '用 `supa_brain { needs: [...], brief: "..." }` 问它；答案会进 `supa_inbox`。',
       'Mode': '模式',
-      'ladder (SupA spawns workers)': '阶梯（SupA 派 worker）',
-      'brain (native subagents + external brains)': '大脑（原生子代理 + 外部大脑）',
-      'brain keeps the harness in charge of its own subagents and only adds read-only external brains':
+      'Normal (the SupA ladder)': '普通模式（SupA 阶梯）',
+      'EB (external brains)': 'EB（外部大脑）',
+      'EB keeps the harness in charge of its own subagents and only adds read-only external brains':
         '大脑模式：子代理交给 harness 自己管，我们只加只读的外部大脑',
       'Model usage': '模型使用统计',
       'Per tier': '每个档位',
@@ -1389,6 +1389,7 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
 
 
