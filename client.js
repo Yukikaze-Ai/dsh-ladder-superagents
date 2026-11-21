@@ -973,6 +973,35 @@ window.__ModuleLoader__.load({
 
         h(Policy, { config: state.config, busy, onConfig: configure, profile }),
 
+        // The product is per session: the profile sets the default, and any
+        // session can be pinned to the other one without touching the rest.
+        h('div', { style: s.card },
+          h('div', { style: s.sectionTitle }, t('Session modes')),
+          h('div', { style: s.hint }, t('The default below applies to every session; a pin here applies to that one session only, so the ladder and EB can run side by side.')),
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, paddingTop: 8 } },
+            h('span', { style: { fontSize: 12, color: color.muted, minWidth: 150 } }, t('profile default')),
+            h('span', { style: { ...s.chip, whiteSpace: 'nowrap' } }, profile === 'eb' ? t('External brains') : t('Ladder'))),
+          ...(state.supaSessions ?? []).map((id) => {
+            const pinned = state.sessionModes?.[id] ?? 'default'
+            return h('div', {
+              key: id,
+              style: { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderTop: `1px solid ${color.border}` },
+            },
+            h('span', { style: { fontSize: 11.5, color: color.text, minWidth: 150, fontFamily: 'monospace' } }, String(id).slice(0, 20)),
+            h('select', {
+              style: { ...s.input, width: 190 },
+              value: pinned,
+              disabled: busy,
+              onChange: (event) => act({ action: 'session', id, enabled: true, mode: event.target.value }),
+            },
+            h('option', { value: 'default' }, `${t('follow profile')}（${profile === 'eb' ? 'EB' : t('Ladder')}）`),
+            h('option', { value: 'normal' }, t('Ladder')),
+            h('option', { value: 'eb' }, t('External brains'))))
+          }),
+          (state.supaSessions ?? []).length === 0
+            ? h('div', { style: { ...s.hint, paddingTop: 8 } }, t('No session is enabled yet; turn one on with the header pill.'))
+            : null),
+
         // Failures, the codex catalog and the harness routes all exist to build
         // and debug a worker ladder. EB mode has no ladder, so none of them.
         profile === 'eb'
@@ -1233,6 +1262,11 @@ window.__ModuleLoader__.load({
         '用 `supa_brain { needs: [...], brief: "..." }` 问它；答案会进 `supa_inbox`。',
       'Mode': '模式',
       'Ladder': '阶梯模式',
+      'Session modes': '各会话的模式',
+      'The default below applies to every session; a pin here applies to that one session only, so the ladder and EB can run side by side.':
+        '下面的默认对所有会话生效；这里的固定只影响那一个会话，所以阶梯和 EB 可以同时跑。',
+      'profile default': '配置默认',
+      'follow profile': '跟随默认',
       'Add a brain': '添加大脑',
       'Close': '收起',
       'Add a read-only external brain': '添加一个只读的外部大脑',
