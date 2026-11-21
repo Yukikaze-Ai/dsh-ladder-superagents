@@ -2,12 +2,63 @@
 
 All notable changes to this plugin. Dates are ISO.
 
-## 0.3.1 — 2026-11-13
+## 0.3.1 — 2026-11-21
 
-The CLI tiers run on macOS. An llm tier is untouched, and Windows keeps the
-behaviour it was verified with.
+The CLI tiers run on macOS, a CLI conversation can be resumed, and routing can
+match a capability instead of only a difficulty.
+
+### Added
+
+- **`supa_stop`** lists the workers of this session and interrupts one, a
+  unique prefix, or all of them. Interruption stops the current execution; the
+  parked queue and the Session survive, so a later message resumes it.
+- **Capability tags.** A tier carries `tags` (`review`, `second-brain`,
+  `long-context`, …) and `supa_spawn` takes `needs`; tiers missing a tag are
+  skipped, and when nothing matches the brief says which capability was
+  missing instead of silently routing by difficulty alone.
+- **Claude Code conversations resume.** The driver asks for
+  `--output-format json`, remembers `session_id` per driver+folder in
+  `~/.dsh/supa/cli-sessions.json`, and passes `--resume` next time, so a
+  reviewer accumulates context. `fresh: true` starts a new conversation;
+  two runs of one conversation are serialised.
+- **The team board carries status.** `supa_spawn` takes `task`; the worker
+  reads it, claims it with its revision, does the work and completes it, and
+  the charter tells a SupA to read progress from `team_task_list`. The id is
+  only passed when `agentTeams.isEnabled` is true for the session.
+- **Worker count on the pill** (`SupA · N`), refreshed from a cached state read.
+- **A usage guide** (`docs/USAGE.md`) and a **BRAIN template**
+  (`docs/BRAIN.template.md`) for collaboration that has to survive a model
+  change.
+
+### Changed
+
+- **`handOffMode` (`job` by default).** A command that would block the turn is
+  answered with a pointer at `run_in_background` instead of spawning an agent
+  to run it: a job costs no tokens and leaves no session. `child` restores the
+  old behaviour. The measured debt was 144 hand-offs at ~95k tokens each, with
+  a median command length of 13.6s.
+- A CLI child is no longer told to call `supa_report` — it has no such tool;
+  its stdout is the result.
+- Claude's model list is shown as **declared** aliases, because
+  `claude models` is a chat prompt, not a listing.
 
 ### Fixed
+
+- Toggling SupA is one file write; it used to rebuild the whole settings state
+  inside the HTTP handler, which blocked the host and stalled the UI.
+- `/supa/state` is cached for ten seconds and polled once a minute.
+- A hand-off closes its usage row when the worker reports, and only a final
+  report does that: a progress update used to write a second `done`.
+- Routes register when the web server appears instead of never when the plugin
+  mounted first.
+- The SupA pill stays visible and retries while the host half answers, instead
+  of disappearing.
+- **macOS and Linux install again**: the `os: win32` guard is gone. The code
+  already branches on `process.platform` for `.cmd` shims, PATH lookup and
+  quoting, so llm tiers work everywhere; CLI tiers outside Windows stay
+  experimental until someone verifies one.
+
+### Fixed (CLI on POSIX)
 
 - **CLI discovery outside Windows.** `findCodex` no longer looks only at
   `%LOCALAPPDATA%` and `.exe` paths: on macOS and Linux PATH decides (Homebrew,
