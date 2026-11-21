@@ -1031,7 +1031,6 @@ window.__ModuleLoader__.load({
       const [state, setState] = useState(null)
       const [busy, setBusy] = useState(false)
       const [hover, setHover] = useState(false)
-      const [open, setOpen] = useState(false)
 
       useEffect(() => {
         let alive = true
@@ -1099,27 +1098,21 @@ window.__ModuleLoader__.load({
       const pinned = state.sessionModes?.[sessionId] ?? 'default'
       const effective = pinned === 'default' ? profile : pinned
 
-      // One write for the whole session row: on/off and the product pin travel
-      // together, so the pill is the only place a session is configured.
-      const apply = async (patch) => {
+      // The pill is a switch and nothing else: on/off. Everything else about a
+      // session lives in the Usage view, which is where a session is inspected.
+      const toggle = async () => {
         if (locked || busy) return
         setBusy(true)
+        const want = !enabled
         try {
-          const next = { action: 'session', id: sessionId, enabled, ...patch }
-          await request('/supa/action', next)
+          await request('/supa/action', { action: 'session', id: sessionId, enabled: want })
           setState((previous) => {
             if (!previous) return previous
-            const want = 'enabled' in patch ? patch.enabled : enabled
             const current = previous.supaSessions ?? []
-            const sessions = want
+            const next = want
               ? [...current.filter((id) => String(id) !== sessionId), sessionId]
               : current.filter((id) => String(id) !== sessionId)
-            const modes = { ...(previous.sessionModes ?? {}) }
-            if ('mode' in patch) {
-              if (patch.mode === 'default') delete modes[sessionId]
-              else modes[sessionId] = patch.mode
-            }
-            return { ...previous, supaSessions: sessions, sessionModes: modes }
+            return { ...previous, supaSessions: next }
           })
         } catch {
           // leave the pill as it was
@@ -1128,84 +1121,43 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const row = (label, widget) => h('div', {
-        style: { display: 'flex', flexDirection: 'column', gap: 4, padding: '7px 0', borderTop: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.25))' },
-      },
-      h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary, #6b7280)' } }, label),
-      widget)
-
-      return h('div', { style: { position: 'relative', display: 'inline-flex' } },
-        h('button', {
-          type: 'button',
-          onClick: () => setOpen((value) => !value),
-          disabled: busy,
-          onMouseEnter: () => setHover(true),
-          onMouseLeave: () => setHover(false),
-          title: `SupA · ${effective === 'eb' ? 'external brains' : 'ladder'}${locked ? ` (scope: ${mode})` : ''}`,
-          style: {
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            height: 26,
-            padding: '0 8px',
-            borderRadius: 8,
-            border: '1px solid transparent',
-            background: (hover || open) ? 'var(--dsw-alias-bg-layer-2, rgba(127,127,127,.12))' : 'transparent',
-            color: enabled ? 'var(--dsw-alias-label-primary, #1f2328)' : 'var(--dsw-alias-label-secondary, #6b7280)',
-            fontSize: 12,
-            fontWeight: 400,
-            lineHeight: 1,
-            cursor: 'pointer',
-            opacity: busy ? 0.6 : 1,
-          },
+      return h('button', {
+        type: 'button',
+        onClick: toggle,
+        disabled: locked || busy,
+        onMouseEnter: () => setHover(true),
+        onMouseLeave: () => setHover(false),
+        title: locked
+          ? `SupA answers in every session (scope: ${mode})`
+          : enabled
+            ? `SupA is on here as ${effective === 'eb' ? 'external brains' : 'the ladder'} — click to turn it off`
+            : 'SupA is off in this session — click to turn it on',
+        style: {
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          height: 26,
+          padding: '0 8px',
+          borderRadius: 8,
+          border: '1px solid transparent',
+          background: hover && !locked ? 'var(--dsw-alias-bg-layer-2, rgba(127,127,127,.12))' : 'transparent',
+          color: enabled ? 'var(--dsw-alias-label-primary, #1f2328)' : 'var(--dsw-alias-label-secondary, #6b7280)',
+          fontSize: 12,
+          fontWeight: 400,
+          lineHeight: 1,
+          cursor: locked ? 'default' : 'pointer',
+          opacity: busy ? 0.6 : 1,
         },
-        h('span', {
-          style: {
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            background: enabled ? 'var(--dsw-alias-state-success-primary, #2f855a)' : 'var(--dsw-alias-state-idle-primary, #9aa0aa)',
-          },
-        }),
-        enabled && effective === 'eb' ? 'SupA · EB' : running > 0 ? `SupA · ${running}` : 'SupA'),
-        open
-          ? h('div', {
-            style: {
-              position: 'absolute',
-              top: 30,
-              right: 0,
-              zIndex: 60,
-              width: 246,
-              padding: '4px 12px 12px',
-              borderRadius: 10,
-              border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.25))',
-              background: 'var(--dsw-alias-bg-layer-1, #fff)',
-              boxShadow: '0 8px 24px rgba(0,0,0,.18)',
-            },
-          },
-          h('div', { style: { fontSize: 11, padding: '8px 0 2px', color: 'var(--dsw-alias-label-secondary, #6b7280)' } }, t('This session')),
-          row(t('SupA'),
-            h('button', {
-              style: { alignSelf: 'flex-start', fontSize: 12, padding: '3px 10px', borderRadius: 7, border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.3))', background: 'transparent', color: 'inherit', cursor: locked ? 'default' : 'pointer' },
-              disabled: locked || busy,
-              onClick: () => apply({ enabled: !enabled }),
-            }, enabled ? t('on') : t('off'))),
-          row(t('Product'),
-            h('select', {
-              style: { width: '100%', fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.3))', background: 'transparent', color: 'inherit' },
-              value: pinned,
-              disabled: locked || busy,
-              onChange: (event) => apply({ mode: event.target.value, enabled: true }),
-            },
-            h('option', { value: 'default' }, `${t('follow default')}（${profile === 'eb' ? t('External brains') : t('Ladder')}）`),
-            h('option', { value: 'normal' }, t('Ladder')),
-            h('option', { value: 'eb' }, t('External brains')))),
-          h('div', { style: { fontSize: 10.5, paddingTop: 8, color: 'var(--dsw-alias-label-secondary, #6b7280)' } },
-            effective === 'eb' ? t('brains: read-only external models, no worker spawns') : t('ladder: SupA spawns workers by difficulty')),
-          locked
-            ? h('div', { style: { fontSize: 10.5, paddingTop: 6, color: 'var(--dsw-alias-label-secondary, #6b7280)' } }, `${t('scope is')} ${mode}`)
-            : null)
-          : null)
+      },
+      h('span', {
+        style: {
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: enabled ? 'var(--dsw-alias-state-success-primary, #2f855a)' : 'var(--dsw-alias-state-idle-primary, #9aa0aa)',
+        },
+      }),
+      enabled && effective === 'eb' ? 'SupA · EB' : running > 0 ? `SupA · ${running}` : 'SupA')
     }
 
     // Two whole languages: Chinese when the app runs in Chinese or the user
@@ -1444,6 +1396,8 @@ window.__ModuleLoader__.load({
     function SupaStatsView(props) {
       useLang()
       const sessionId = String(props?.sessionId ?? '')
+      const [tab, setTab] = useState('usage')
+      const [settings, setSettings] = useState(null)
       const [stats, setStats] = useState(null)
       const [error, setError] = useState('')
       const [busy, setBusy] = useState(false)
@@ -1468,6 +1422,85 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         load()
       }, [load])
+
+      // The session tab needs the per-session state, which /supa/state holds.
+      const loadSettings = useCallback(async () => {
+        try {
+          setSettings(await request('/supa/state'))
+        } catch {
+          // the session tab simply says nothing is known yet
+        }
+      }, [])
+
+      useEffect(() => {
+        if (tab === 'session') loadSettings()
+      }, [tab, loadSettings])
+
+      const changeSession = async (patch) => {
+        if (!sessionId) return
+        setBusy(true)
+        try {
+          await request('/supa/action', { action: 'session', id: sessionId, enabled: true, ...patch })
+          await loadSettings()
+          setError('')
+        } catch (failure) {
+          setError(String(failure?.message ?? failure))
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      const tabs = h('div', { style: { display: 'flex', gap: 6, paddingBottom: 4 } },
+        ...[['usage', t('Usage')], ['session', t('This session')]].map(([value, label]) => h('button', {
+          key: value,
+          style: {
+            fontSize: 12,
+            padding: '4px 10px',
+            borderRadius: 8,
+            cursor: 'pointer',
+            border: `1px solid ${color.border}`,
+            background: tab === value ? 'var(--dsw-alias-bg-layer-2, rgba(127,127,127,.14))' : 'transparent',
+            color: tab === value ? color.text : color.muted,
+          },
+          onClick: () => setTab(value),
+        }, label)))
+
+      const sessionTab = (() => {
+        if (!sessionId) return h('div', { style: s.card }, h('div', { style: s.hint }, t('This view has no session id.')))
+        const profile = settings?.config?.profile ?? 'normal'
+        const pinned = settings?.sessionModes?.[sessionId] ?? 'default'
+        const effective = pinned === 'default' ? profile : pinned
+        const on = (settings?.supaSessions ?? []).some((id) => String(id) === sessionId)
+        return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+          h('div', { style: s.card },
+            h('div', { style: s.sectionTitle }, t('This session')),
+            h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 6 } },
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+                h('span', { style: { fontSize: 12, minWidth: 110, color: color.text } }, 'SupA'),
+                h('button', {
+                  style: s.btn,
+                  disabled: busy || !settings,
+                  onClick: () => changeSession({ enabled: !on }),
+                }, !settings ? '…' : on ? t('on') : t('off')),
+                h('span', { style: s.meta }, on ? t('running in this session') : t('not running in this session'))),
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+                h('span', { style: { fontSize: 12, minWidth: 110, color: color.text } }, t('Product')),
+                h('select', {
+                  style: { ...s.input, width: 190 },
+                  value: pinned,
+                  disabled: busy || !settings,
+                  onChange: (event) => changeSession({ mode: event.target.value }),
+                },
+                h('option', { value: 'default' }, `${t('follow default')}（${profile === 'eb' ? t('External brains') : t('Ladder')}）`),
+                h('option', { value: 'normal' }, t('Ladder')),
+                h('option', { value: 'eb' }, t('External brains'))),
+                h('span', { style: s.meta }, effective === 'eb' ? t('brains: read-only external models, no worker spawns') : t('ladder: SupA spawns workers by difficulty'))))))
+      })()
+
+      if (tab === 'session') {
+        return h('div', { style: s.page }, tabs, sessionTab,
+          error ? h('div', { style: s.error }, error) : null)
+      }
 
       if (error) return h('div', { style: s.page }, h('div', { style: s.error }, `stats: ${error}`))
       if (!stats) return h('div', { style: s.page }, h('div', { style: s.hint }, t('Loading usage…')))
@@ -1575,6 +1608,7 @@ window.__ModuleLoader__.load({
       })
 
       return h('div', { style: { ...s.page, gap: 10, padding: '16px 28px 20px' } },
+        tabs,
         h('div', {
           style: {
             display: 'flex',
