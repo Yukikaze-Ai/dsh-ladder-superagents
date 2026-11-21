@@ -793,7 +793,12 @@ window.__ModuleLoader__.load({
                   onClick: () => act({ action: 'remove', id: tier.id }),
                   title: 'Remove this brain',
                 }, t('Remove'))))),
-            h('div', { style: { ...s.hint, paddingTop: 10 } }, t('Ask one with `supa_brain { needs: [...], brief: "..." }`; the answer lands in `supa_inbox`.')))
+            h('div', { style: { ...s.hint, paddingTop: 10 } }, t('Ask one with `supa_brain { needs: [...], brief: "..." }`; the answer lands in `supa_inbox`.')),
+            // The form belongs under the button that opens it; leaving it at
+            // the bottom of the page looked like the button did nothing.
+            manualOpen
+              ? h('div', { style: { paddingTop: 10 } }, h(AddForm, { drivers: state.drivers, onAdd: act, brain: true }))
+              : null)
           : h('div', { style: s.section },
           ...Array.from({ length: 10 }, (_, offset) => {
             const slot = offset + 1
@@ -855,16 +860,22 @@ window.__ModuleLoader__.load({
             onAdd: act,
             canPinTiers: tiers.some((tier) => (tier.kind === 'cli' || tier.kind === 'codex') && tier.model),
           }),
-        manualOpen || profile === 'eb'
-          ? h(AddForm, { drivers: state.drivers, onAdd: act, disabled: profile !== 'eb' && tiers.length >= 10, brain: profile === 'eb' })
-          : h('button', {
-            style: { ...s.btn, alignSelf: 'flex-start' },
-            onClick: () => setManualOpen(true),
-            title: 'For a model that is in neither the codex catalog nor the live llm routes',
-          }, t('Add a model manually')),
+        // EB renders its add form inside the brains card, so the bottom block
+        // is normal mode only.
+        profile === 'eb'
+          ? null
+          : manualOpen
+            ? h(AddForm, { drivers: state.drivers, onAdd: act, disabled: tiers.length >= 10 })
+            : h('button', {
+              style: { ...s.btn, alignSelf: 'flex-start' },
+              onClick: () => setManualOpen(true),
+              title: 'For a model that is in neither the codex catalog nor the live llm routes',
+            }, t('Add a model manually')),
 
         error ? h('div', { style: s.error }, error) : null,
-        h('div', { style: s.hint }, t('The ladder is ten slots: T1 is the strongest and covers a 10-point task, T10 the weakest and covers a 1-point task. Drag a tier by its handle to change its slot; the slot is its tier.')),
+        profile === 'eb'
+          ? null
+          : h('div', { style: s.hint }, t('The ladder is ten slots: T1 is the strongest and covers a 10-point task, T10 the weakest and covers a 1-point task. Drag a tier by its handle to change its slot; the slot is its tier.')),
       )
     }
 
