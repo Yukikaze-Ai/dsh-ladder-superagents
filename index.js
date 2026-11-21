@@ -4204,10 +4204,10 @@ export function apply(ctx, config) {
       ].join(' '),
     }
 
-    const disposers = cfg.profile === 'brain'
+    const definitions = cfg.profile === 'brain'
       ? [contextTool, inboxTool, modelsTool, brainTool, statusTool]
       : [contextTool, reportTool, inboxTool, modelsTool, spawnTool, requestTool, supplyTool, authorityTool, statusTool, stopTool]
-      .map((definition) => ctx.tools.register(definition))
+    const disposers = definitions.map((definition) => ctx.tools.register(definition))
     return () => {
       for (const dispose of disposers.reverse()) {
         try {
