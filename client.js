@@ -569,6 +569,90 @@ window.__ModuleLoader__.load({
         error ? h('div', { style: s.error }, error) : null)
     }
 
+    /**
+     * One brain: state at a glance, chips for its tags, and an inline editor so
+     * changing the model or the tags does not mean removing and re-adding it.
+     */
+    function BrainRow({ tier, declared, busy, onAction, color, s, t }) {
+      const [editing, setEditing] = useState(false)
+      const [model, setModel] = useState(tier.model ?? '')
+      const [effort, setEffort] = useState(tier.reasoningEffort ?? '')
+      const [tags, setTags] = useState((tier.tags ?? []).join(', '))
+      const models = declared?.[tier.driver]?.models ?? []
+      const efforts = declared?.[tier.driver]?.efforts ?? []
+      const usable = tier.available !== false && tier.enabled !== false && !tier.failure
+      const reason = tier.failure || (tier.available === false ? t('CLI not found') : '')
+
+      const save = () => onAction({
+        action: 'update',
+        id: tier.id,
+        tier: {
+          model,
+          reasoningEffort: effort,
+          tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+        },
+      })
+
+      return h('div', {
+        style: {
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          padding: '10px 12px',
+          borderRadius: 10,
+          border: `1px solid ${color.border}`,
+        },
+      },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+        h('span', {
+          style: { width: 7, height: 7, borderRadius: '50%', background: usable ? color.ok : color.bad, flex: 'none' },
+          title: usable ? t('ready') : reason || t('unavailable'),
+        }),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 } },
+          h('div', { style: { fontSize: 13, color: color.text } }, tier.label),
+          h('div', { style: s.meta }, [tier.driver || tier.kind, tier.model, tier.reasoningEffort]
+            .filter(Boolean).join(' · ') || tier.id),
+          tier.tags?.length
+            ? h('div', { style: { display: 'flex', gap: 4, flexWrap: 'wrap' } },
+              ...tier.tags.map((tag) => h('span', {
+                key: tag,
+                style: { fontSize: 10.5, padding: '1px 6px', borderRadius: 999, border: `1px solid ${color.border}`, color: color.muted },
+              }, tag)))
+            : null),
+        reason ? h('div', { style: { fontSize: 11, color: color.bad, maxWidth: 180 } }, String(reason).slice(0, 90)) : null,
+        h('button', {
+          style: s.btn,
+          disabled: busy,
+          onClick: () => setEditing((open) => !open),
+        }, editing ? t('Cancel') : t('Edit')),
+        h('button', {
+          style: s.btn,
+          disabled: busy,
+          onClick: () => onAction({ action: 'remove', id: tier.id }),
+          title: t('Remove this brain'),
+        }, t('Remove'))),
+      editing
+        ? h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', paddingLeft: 17 } },
+          models.length > 0
+            ? h('select', { style: { ...s.input, width: 170 }, value: model, onChange: (event) => setModel(event.target.value) },
+              h('option', { value: '' }, t('CLI default')),
+              ...models.map((entry) => h('option', { key: entry.id, value: entry.id }, `${entry.label ?? entry.id}（${entry.id}）`)))
+            : h('input', { style: { ...s.input, width: 170 }, value: model, placeholder: t('model'), onChange: (event) => setModel(event.target.value) }),
+          efforts.length > 0
+            ? h('select', { style: { ...s.input, width: 110 }, value: effort, onChange: (event) => setEffort(event.target.value) },
+              h('option', { value: '' }, t('model default')),
+              ...efforts.map((level) => h('option', { key: level, value: level }, level)))
+            : null,
+          h('input', {
+            style: { ...s.input, flex: 1, minWidth: 190 },
+            value: tags,
+            placeholder: t('tags, comma separated'),
+            onChange: (event) => setTags(event.target.value),
+          }),
+          h('button', { style: s.btnPrimary, disabled: busy, onClick: save }, t('Save')))
+        : null)
+    }
+
     function Policy({ config, busy, onConfig, profile }) {
       const [minutes, setMinutes] = useState('')
       const [children, setChildren] = useState('')
@@ -831,21 +915,17 @@ window.__ModuleLoader__.load({
             h('div', { style: s.hint }, t('Brains read this folder and answer with thinking, review and blind spots. They cannot edit files or run commands: the harness stays in charge of every change, and its own subagents stay its own.')),
             brains.length === 0
               ? h('div', { style: { ...s.hint, paddingTop: 8 } }, t('No brain yet. Add a CLI tier below (Claude is the verified one) — it is added as read-only.'))
-              : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 8 } },
-                ...brains.map((tier) => h('div', {
+              : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8 } },
+                ...brains.map((tier) => h(BrainRow, {
                   key: tier.id,
-                  style: { display: 'flex', gap: 10, alignItems: 'center', padding: '8px 10px', borderRadius: 8, border: `1px solid ${color.border}` },
-                },
-                h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 } },
-                  h('div', { style: { fontSize: 13, color: color.text } }, tier.label),
-                  h('div', { style: s.meta }, [tier.driver || tier.kind, tier.model, tier.reasoningEffort].filter(Boolean).join(' · ') || tier.id),
-                  tier.tags?.length ? h('div', { style: s.meta }, tier.tags.join(' · ')) : null),
-                h('button', {
-                  style: s.btn,
-                  disabled: busy,
-                  onClick: () => act({ action: 'remove', id: tier.id }),
-                  title: 'Remove this brain',
-                }, t('Remove'))))),
+                  tier,
+                  declared: state.declared,
+                  busy,
+                  onAction: act,
+                  color,
+                  s,
+                  t,
+                }))),
             h('div', { style: { ...s.hint, paddingTop: 10 } }, t('Ask one with `supa_brain { needs: [...], brief: "..." }`; the answer lands in `supa_inbox`.')),
             // The form belongs under the button that opens it; leaving it at
             // the bottom of the page looked like the button did nothing.
@@ -1130,6 +1210,12 @@ window.__ModuleLoader__.load({
       'No brain yet. Add a CLI tier below (Claude is the verified one) — it is added as read-only.':
         '还没有大脑。在下面加一个 CLI 档位（Claude 是已验证的那个），它会以只读方式加入。',
       'Remove this brain': '移除这个大脑',
+      'Edit': '编辑',
+      'Save': '保存',
+      'ready': '可用',
+      'unavailable': '不可用',
+      'CLI not found': '找不到这个 CLI',
+      'tags, comma separated': '标签，用逗号分隔',
       'Ask one with `supa_brain { needs: [...], brief: "..." }`; the answer lands in `supa_inbox`.':
         '用 `supa_brain { needs: [...], brief: "..." }` 问它；答案会进 `supa_inbox`。',
       'Mode': '模式',
@@ -1504,6 +1590,7 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
 
 

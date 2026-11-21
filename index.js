@@ -3130,6 +3130,23 @@ export function apply(ctx, config) {
       const tier = ladder.tiers.find((entry) => entry.id === tierId)
       if (!tier) throw new Error(`no tier ${tierId}`)
       tier.enabled = body.enabled !== false
+    } else if (body?.action === 'update') {
+      // Editing an existing tier in place: changing a brain's model, effort or
+      // tags must not cost a remove-and-add dance.
+      const target = ladder.tiers.find((entry) => entry.id === tierId)
+      if (!target) throw new Error(`no tier ${tierId}`)
+      const patch = body.tier && typeof body.tier === 'object' ? body.tier : {}
+      const merged = normalizeTier({
+        ...target,
+        ...('label' in patch ? { label: patch.label } : {}),
+        ...('model' in patch ? { model: patch.model } : {}),
+        ...('reasoningEffort' in patch ? { reasoningEffort: patch.reasoningEffort } : {}),
+        ...('tags' in patch ? { tags: patch.tags } : {}),
+        ...('command' in patch ? { command: patch.command } : {}),
+      }, target.slot - 1)
+      merged.id = target.id
+      merged.slot = target.slot
+      ladder.tiers = ladder.tiers.map((entry) => (entry.id === tierId ? merged : entry))
     } else if (body?.action === 'remove') {
       const before = ladder.tiers.length
       const removed = ladder.tiers.find((entry) => entry.id === tierId)
