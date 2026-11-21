@@ -1370,6 +1370,11 @@ window.__ModuleLoader__.load({
       'auto': '自动',
       'This session': '本会话',
       'Settings': '设置',
+      'Brains in this session': '这个会话的大脑',
+      'all brains are available; uncheck the ones this session should not use': '全部大脑都可用；取消勾选可以排除某些',
+      'only the checked brains are available in this session': '只有勾选的大脑在这个会话里可用',
+      'No brain yet. Add one below; it is created read-only.': '还没有大脑。在下面加一个，会自动创建为只读。',
+      'use in this session': '在本会话中使用',
       'Usage': '用量',
       'SupA usage and settings': 'SupA 用量与设置',
       'Saving…': '保存中…',
@@ -1512,6 +1517,7 @@ window.__ModuleLoader__.load({
       const sessionId = String(props?.sessionId ?? '')
       const [tab, setTab] = useState('usage')
       const [settings, setSettings] = useState(null)
+      const [brainForm, setBrainForm] = useState(false)
       const [stats, setStats] = useState(null)
       const [error, setError] = useState('')
       const [busy, setBusy] = useState(false)
@@ -1564,6 +1570,21 @@ window.__ModuleLoader__.load({
         }
       }
 
+      // Adding, editing or removing a brain happens from the session that uses
+      // it, but the brain itself lives in the shared model pool.
+      const tierAction = async (body) => {
+        setBusy(true)
+        try {
+          await request('/supa/action', body)
+          await loadSettings()
+          setError('')
+        } catch (failure) {
+          setError(String(failure?.message ?? failure))
+        } finally {
+          setBusy(false)
+        }
+      }
+
       const tabItems = [
         { value: 'usage', label: t('Usage') },
         { value: 'session', label: t('Settings') },
@@ -1576,20 +1597,33 @@ window.__ModuleLoader__.load({
         const pinned = settings?.sessionModes?.[sessionId] ?? 'default'
         const effective = pinned === 'default' ? profile : pinned
         const on = (settings?.supaSessions ?? []).some((id) => String(id) === sessionId)
+        const brains = (settings?.tiers ?? []).filter((tier) => tier.readonly === true)
+        const allowed = settings?.sessionBrains?.[sessionId] ?? []
+        const active = allowed.length === 0 ? brains.map((tier) => tier.id) : allowed
+        const toggleBrain = (id) => {
+          const next = new Set(active)
+          if (next.has(id)) next.delete(id)
+          else next.add(id)
+          const list = brains.map((tier) => tier.id).filter((candidate) => next.has(candidate))
+          // Checking every brain is the same as pinning none.
+          changeSession({ brains: list.length === brains.length ? [] : list })
+        }
+        const row = (label, widget, note) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+          h('span', { style: { fontSize: 12, minWidth: 110, color: color.text } }, label),
+          widget,
+          note ? h('span', { style: s.meta }, note) : null)
         return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
           h('div', { style: s.card },
-            h('div', { style: s.sectionTitle }, t('Settings')),
+            h('div', { style: s.sectionTitle }, t('This session')),
             h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 6 } },
-              h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
-                h('span', { style: { fontSize: 12, minWidth: 110, color: color.text } }, 'SupA'),
-                h('button', {
-                  style: s.btn,
-                  disabled: busy || !settings,
-                  onClick: () => changeSession({ enabled: !on }),
-                }, !settings ? '…' : on ? t('on') : t('off')),
-                h('span', { style: s.meta }, on ? t('running in this session') : t('not running in this session'))),
-              h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
-                h('span', { style: { fontSize: 12, minWidth: 110, color: color.text } }, t('Product')),
+              row('SupA', h('button', {
+                type: 'button',
+                style: s.btn,
+                disabled: busy || !settings,
+                onClick: () => changeSession({ enabled: !on }),
+              }, !settings ? '…' : on ? t('on') : t('off')),
+              on ? t('running in this session') : t('not running in this session')),
+              row(t('Product'),
                 h('select', {
                   style: { ...s.input, width: 190 },
                   value: pinned,
@@ -1599,7 +1633,45 @@ window.__ModuleLoader__.load({
                 h('option', { value: 'default' }, `${t('follow default')}（${profile === 'eb' ? t('External brains') : t('Ladder')}）`),
                 h('option', { value: 'normal' }, t('Ladder')),
                 h('option', { value: 'eb' }, t('External brains'))),
-                h('span', { style: s.meta }, effective === 'eb' ? t('brains: read-only external models, no worker spawns') : t('ladder: SupA spawns workers by difficulty'))))))
+                effective === 'eb' ? t('brains: read-only external models, no worker spawns') : t('ladder: SupA spawns workers by difficulty')))),
+          h('div', { style: s.card },
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+              h('div', { style: { ...s.sectionTitle, flex: 1 } }, t('Brains in this session')),
+              h('button', {
+                type: 'button',
+                style: s.btnPrimary,
+                disabled: busy,
+                onClick: () => setBrainForm((value) => !value),
+              }, brainForm ? t('Close') : t('Add a brain'))),
+            h('div', { style: s.hint }, allowed.length === 0
+              ? t('all brains are available; uncheck the ones this session should not use')
+              : t('only the checked brains are available in this session')),
+            h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8 } },
+              brains.length === 0
+                ? h('div', { style: s.hint }, t('No brain yet. Add one below; it is created read-only.'))
+                : null,
+              ...brains.map((tier) => h(BrainRow, {
+                key: tier.id,
+                tier,
+                declared: settings?.declared,
+                catalog: settings?.catalog,
+                busy,
+                onAction: tierAction,
+                color,
+                s,
+                t,
+                checked: active.includes(tier.id),
+                onToggle: toggleBrain,
+              }))),
+            brainForm
+              ? h('div', { style: { paddingTop: 10 } }, h(AddForm, {
+                drivers: settings?.drivers ?? [],
+                onAdd: tierAction,
+                brain: true,
+                declared: settings?.declared,
+                catalog: settings?.catalog,
+              }))
+              : null))
       })()
 
       if (tab === 'session') {
